@@ -2,7 +2,7 @@
 
 ## Software Scripts
 
-To run, create a virtuation environemnt with venv and cd into ```software/python```
+To run, create a virtuation environment with venv and cd into ```software/python```
 
 To install the required libraries run the following:
 
