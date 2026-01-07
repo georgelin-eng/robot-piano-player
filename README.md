@@ -5,5 +5,4 @@
 To run, create a virtuation environemnt with venv and cd into ```software/python```
 
 To install the required libraries run the following:
-
-```pip install -r requirements.txt"```
+```pip install -r requirements.txt```
