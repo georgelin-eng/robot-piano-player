@@ -43,7 +43,7 @@ function Ktune(K, G, H, p, Ts, OSu)
     labelK0  = uilabel(fig, 'Position', [100, 310, 200, 20], 'Text', 'K0 Multiplier: 1');
 
     % Kp SLIDER CONFIG
-    sliderKp = uislider(fig, 'Position', [100, 220, 600, 4], 'Limits', [0, 2], 'Value', 1);
+    sliderKp = uislider(fig, 'Position', [100, 220, 600, 4], 'Limits', [0, 5], 'Value', 1);
     labelKp  = uilabel(fig, 'Position', [100, 230, 300, 20], 'Text', 'Kp Multiplier: 1');
     
     % Ki SLIDER CONFIG
@@ -51,7 +51,7 @@ function Ktune(K, G, H, p, Ts, OSu)
     labelKi  = uilabel(fig, 'Position', [100, 150, 200, 20], 'Text', 'Ki Multiplier: 1');
     
     % Kd SLIDER CONFIG
-    sliderKd = uislider(fig, 'Position', [100, 60, 600, 4], 'Limits', [0, 2], 'Value', 1);
+    sliderKd = uislider(fig, 'Position', [100, 60, 600, 4], 'Limits', [0, 5], 'Value', 1);
     labelKd  = uilabel(fig, 'Position', [100, 70, 200, 20], 'Text', 'Kd Multiplier: 1');
 
     % init plot
