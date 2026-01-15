@@ -48,7 +48,7 @@ Z2 = -1.31;
 Kp = 1/p - (Z1+Z2) / (Z1*Z2);
 Kd = 1/p * Kp + 1/(Z1*Z2);
 
-K0 = K0 * 0.1;
+K0 = K0 * 1;
 K_PID.Kp = Kp * K0;
 K_PID.Ki =   1* K0;
 K_PID.Kd = Kd * K0;
@@ -58,7 +58,25 @@ K_PID.Kp = 0.0037 * Kmult * 1.332;
 K_PID.Ki = 0.0025 * Kmult * 0.411;
 K_PID.Kd = 0.0013 * Kmult * 3.7246;
 
+Kmult = 10;
+K_PID.Kp = K_PID.Kp * Kmult * 17.6;
+K_PID.Ki = K_PID.Ki * Kmult * 22.1;
+K_PID.Kd = K_PID.Kd * Kmult * 0.36;
+
+Kmult = 0.2;
+K_PID.Kp = K_PID.Kp * Kmult * 0.22;
+K_PID.Ki = K_PID.Ki * Kmult * 0.1545;
+K_PID.Kd = K_PID.Kd * Kmult * 0.2336;
+
+K_PID.Kp = 0.0628;
+K_PID.Ki = 0.0115;
+K_PID.Kd = 0.0013;
+
 D = (K_PID.Kp) + (K_PID.Ki  / s) + (K_PID.Kd * -p * s / (s - p));
+Gc = D;
 CLTF = G * D / (1 + G * H * D);
+iw_CLTF = CLTF / (1/s) / Ym / Km;
+PWM_CLTF = CLTF / Gp / Ga;
+
 
 [Tr, Tp, Ts, OSu] = RCG_from_CLTF(CLTF);

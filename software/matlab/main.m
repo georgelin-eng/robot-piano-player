@@ -47,4 +47,4 @@ Hs = sensor_params;
 % ---------- CONTROLLER DESIGN ----------
 controller;
 
-% Ktune(K_PID, G, H, p, 0.3, OSu)
+% Ktune(K_PID, G, H, p, 5, OSu)
