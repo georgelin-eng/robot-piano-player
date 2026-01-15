@@ -3,7 +3,7 @@ s = tf('s');
 % ----------- PLANT PARAMS ------------------
 % Pulley = 3764N137
 % 9mm belt vs 6mm is 50% stiffer due to cross section
-% Using modulus of fibreglass since
+% Using modulus of fibreglass
 belt_width = 9 * 1e-3; % 
 A = 1.49*1e-3 *belt_width;  % Cross section  [m^2]
 Y = 72 * 1e9;               % Young's modulus of fibreglass [Pa]

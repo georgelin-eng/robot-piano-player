@@ -68,9 +68,9 @@ K_PID.Kp = K_PID.Kp * Kmult * 0.22;
 K_PID.Ki = K_PID.Ki * Kmult * 0.1545;
 K_PID.Kd = K_PID.Kd * Kmult * 0.2336;
 
-K_PID.Kp = 0.0628;
-K_PID.Ki = 0.0115;
-K_PID.Kd = 0.0013;
+K_PID.Kp = 0.0628*2;
+K_PID.Ki = 0.0115*2 * 0.1;
+K_PID.Kd = 0.0013*2;
 
 D = (K_PID.Kp) + (K_PID.Ki  / s) + (K_PID.Kd * -p * s / (s - p));
 Gc = D;
@@ -80,3 +80,4 @@ PWM_CLTF = CLTF / Gp / Ga;
 
 
 [Tr, Tp, Ts, OSu] = RCG_from_CLTF(CLTF);
+

@@ -48,3 +48,33 @@ Hs = sensor_params;
 controller;
 
 % Ktune(K_PID, G, H, p, 5, OSu)
+
+
+
+% ---------- TESTING SOFT RAMP ----------
+% lsim with 0 to 1 seconds
+figure; hold on; grid on;
+
+t = 0:1e-3:0.5;
+yd_targets = 0.02:0.06:0.26;
+ramp_time = 0.1;
+
+for yd = yd_targets
+    yd_eff = yd * Ktj;              % scaled setpoint
+    slope  = yd_eff / ramp_time;
+    
+    u = min(yd_eff, slope * t);     % ramp with saturation
+    
+    y = lsim(iw_CLTF, u, t);
+    
+    plot(t, y, 'DisplayName', sprintf('yd = %.2f', yd));
+end
+
+xlabel('Time (s)');
+ylabel('Motor Current(A)');
+title ('Soft Start Response');
+legend('Location','bestoutside');
+
+% lsim(CLTF, u, t);
+% lsim(iw_CLTF, u, t);
+% lsim(PWM_CLTF, u, t);
