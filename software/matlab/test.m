@@ -1,32 +1,26 @@
 s = tf('s');
 addpath("scripts/")
 
-p = (s+40)*(s+500)*(s+1500);
+p = s*(s+40)*(s+500)*(s+1500)*(s+3000);
 Gp = 1 / p;
 G = Gp;
-N = 2.0;
-CF = 100;
-Hc = CF / (N*s + CF);
+wxo = 8;
 
-Dp = 1/s * CF / (N * s + CF);
-OLTF = Gp * Hc * Dp;
+z = -wxo;
+D = 1/z * (s-z)/s;
 
-[Gm, Pm, wxo, ~] = margin(OLTF);
+OLTF = Gp * D;
 
-K0 = Gm;
+Ki = 1;
+Kp = -1/z;
 
-Z1 = -wxo;
-Z2 = -wxo;
-p = pole(Hc);
+K0 = 1e14;
+K_PI.Ki = Ki * K0;
+K_PI.Kp = Kp * K0;
 
-Kp = 1/p - (Z1+Z2) / (Z1*Z2);
-Kd = 1/p * Kp + 1/(Z1*Z2);
+D = (K_PI.Ki/s + K_PI.Kp);
 
-K0 = K0 * 1e-1;
-K_PID.Kp = Kp * K0;
-K_PID.Ki =   1* K0;
-K_PID.Kd = Kd * K0;
+% [Gm, Pm, wxo, ~] = margin(OLTF);
 
-D = (K_PID.Kp) + (K_PID.Ki  / s) + (K_PID.Kd * -p * s / (s - p));
-CLTF = feedback(G*D, H);
+CLTF = feedback(G*D, 1);
 

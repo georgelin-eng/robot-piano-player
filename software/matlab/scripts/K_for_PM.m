@@ -1,7 +1,7 @@
 function [K] = K_for_PM(K0, OLTF, target_PM, print)
     % OLTF = K0 * D * Gp * H
     threshold = 0.01;
-    K_step = K0/100;
+    K_step = K0;
    
     if(nargin < 4)
         print = "OFF";
