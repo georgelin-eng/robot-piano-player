@@ -1,0 +1,45 @@
+% clear clc;
+addpath("scripts/")
+% motor_name = 'Maxon_ECi40';
+motor_name = '60PG-997-4.25-EN';
+
+Mhand   = 0.5;  % Test mass    [kg]
+CF      = 200;  % Control freq [Hz]
+DC      = 0.5;  % Duty cycle
+WnRes   = 2;    % Frequency search res
+ZetaRes = 0.05; % Damping factor search res
+TargPM  = 60;   % Target phase margin [degrees]
+
+% --------- MECH SYSTEM MODEL ---------
+[Rw, Lw, Km, Jm, Bm] = motor_params(motor_name);
+plant_params;
+
+n = 1/Rp;
+
+% Summing components
+J1 = Jm + Jp + Jbelt;
+J2 = Mhand * 1/n^2;
+B1 = Bm + Bp;
+B2 = Brail * 1/n^2;
+K1 = Kbelt * 1/n^2;
+
+% C
+Ztot = 1 / (1/Rtot + 1/(s*Ltot) + s*Ctot);
+
+
+
+nKm = Km; % joint space speed is same as motor speed
+
+Ye = 1/(s*Lw + Rw);
+Ym = Ztot;
+Gp = feedback(Ye*nKm*Ym, nKm) * 1/s;
+
+Kjt = n;
+Ktj = 1/Kjt;
+
+Hs = sensor_params;
+
+% ---------- CONTROLLER DESIGN ----------
+controller;
+
+% Ktune(K_PID, G, H, p, 0.3, OSu)
