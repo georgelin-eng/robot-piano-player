@@ -14,14 +14,15 @@ TargPM  = 60;   % Target phase margin [degrees]
 [Rw, Lw, Km, Jm, Bm] = motor_params(motor_name);
 plant_params;
 
-n = 1/Rp;
+n1 = 3.6;
+n2 = 1/Rp;
 
 % Summing components
-J1 = Jm + Jp + Jbelt;
-J2 = Mhand * 1/n^2;
+J1 = Jm + Jp/n1^2 + Jbelt/n1^2;
+J2 = Mhand * 1/n1^2 * 1/n2^2;
 B1 = Bm + Bp;
-B2 = Brail * 1/n^2;
-K1 = Kbelt * 1/n^2;
+B2 = Brail * 1/n1^2 * 1/n2^2;
+K1 = Kbelt * 1/n1^2 * 1/n2^2;
 
 % C1 || R1 || (L + C2 || R2)
 ZC1 = 1/(s*J1);
@@ -66,7 +67,6 @@ for yd = yd_targets
     u = min(yd_eff, slope * t);     % ramp with saturation
     
     y = lsim(iw_CLTF, u, t);
-    
     plot(t, y, 'DisplayName', sprintf('yd = %.2f', yd));
 end
 
