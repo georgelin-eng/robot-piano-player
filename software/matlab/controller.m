@@ -1,4 +1,4 @@
-CF = 1000;
+CF = 200;
 dt = 1/CF;
 PWM_freq = 10e3;
 Ka = 24; % 24V DC PWM applied to motor
@@ -76,9 +76,18 @@ K_PID.Kp = 0.1256 * 0.2136 * 0.6030       * 1.7666;
 K_PID.Ki = 0.0115 * 0.0051 * 1.4210 * 400 * 0.0299;
 K_PID.Kd = 0.0013 * 1.2792 * 1.0300       * 2.1758;
 
+% Stepper response
+K_PID.Kp = 0.0286 * 10 * 10;
+K_PID.Ki = 9.9677e-04 * 10;
+K_PID.Kd = 0.0037 * 0.1;
+
+
+D = (K_PID.Kp) + (K_PID.Ki  / s) + (K_PID.Kd * -p * s / (s - p));
+Gc = D;
+CLTF = G * D / (1 + G * H * D);
+
 iw_CLTF = CLTF / (1/s) / Ym / Km;
 PWM_CLTF = CLTF / Gp / Ga;
-
 
 [Tr, Tp, Ts, OSu] = RCG_from_CLTF(CLTF);
 
