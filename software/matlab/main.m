@@ -1,10 +1,9 @@
 % clear clc;
 addpath("scripts/")
-% motor_name = 'Maxon_ECi40';
 % motor_name = '60PG-997-4.25-EN';
-motor_name = 'NEMA17S'; % Model on systems level as a DC motor with S curve set point
+motor_name = '60PG-6055ZY';
 
-Mhand   = 0.15; % Test mass    [kg]
+Mhand   = 0.43; % Test mass    [kg]
 CF      = 200;  % Control freq [Hz]
 DC      = 0.5;  % Duty cycle
 WnRes   = 2;    % Frequency search res
@@ -12,14 +11,14 @@ ZetaRes = 0.05; % Damping factor search res
 TargPM  = 60;   % Target phase margin [degrees]
 
 % --------- MECH SYSTEM MODEL ---------
-[Rw, Lw, Km, Jm, Bm] = motor_params(motor_name);
+[Rw, Lw, Km, Jm, Bm, n, Istall] = motor_params(motor_name);
 plant_params;
 
-n1 = 1;
-n2 = 1/Rp;
+n1 = n;         % gearbox
+n2 = 1/Rpulley; % rotational to linear
 
 % Summing components
-J1 = Jm + Jp/n1^2 + Jbelt/n1^2;
+J1 = Jm + Jgearbox + Jpulley/n1^2 + Jbelt/n1^2;
 J2 = Mhand * 1/n1^2 * 1/n2^2;
 B1 = Bm + Bp;
 B2 = Brail * 1/n1^2 * 1/n2^2;
@@ -46,42 +45,9 @@ Ktj = 1/Kjt;
 Hs = sensor_params;
 
 % ---------- CONTROLLER DESIGN ----------
-controller;
+% controller;
 
 % Ktune(K_PID, G, H, p, 5, OSu)
 
-
 % ---------- TESTING SOFT RAMP ----------
-% lsim with 0 to 1 seconds
-figure; hold on; grid on;
-
-t = 0:1e-4:0.5;
-yd_targets = 0.02:0.06:0.26;
-ramp_time = 0.1;
-
-for yd = yd_targets
-    yd_eff = yd * Ktj;              % scaled setpoint
-    slope  = yd_eff / ramp_time;
-
-    % S-curve 
-    a = 2*pi / ramp_time;
-    u = yd_eff / (2*pi) * (a*t - sin(a*t));
-    u = min(yd_eff, u);
-
-    % Linear ramp
-    % u = min(yd_eff, slope * t);     % ramp with saturation
-    
-    y = lsim(iw_CLTF, u, t);
-    plot(t, y, 'DisplayName', sprintf('yd = %.2f', yd));
-end
-
-xlabel('Time (s)');
-ylabel('Motor Current(A)');
-title ('S-Curve Start Response');
-legend('Location','bestoutside');
-
-figure;
-lsim(CLTF, u, t);
-
-% lsim(iw_CLTF, u, t);
-% lsim(PWM_CLTF, u, t);
+% testbench;

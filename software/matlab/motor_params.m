@@ -1,4 +1,4 @@
-function [Rw, Lw, Km, Jm, Bm] = motor_params(motor_name)
+function [Rw, Lw, Km, Jm, Bm, n, Istall] = motor_params(motor_name)
     % MOTOR_PARAMS Returns motor parameters for a given motor name.
     %
     % INPUTS:
@@ -18,6 +18,7 @@ function [Rw, Lw, Km, Jm, Bm] = motor_params(motor_name)
 
     motor_table = readtable('motors.xlsx');
     row = getMotorRow(motor_name, motor_table);
+    GEAR_BOX_LOSS = 0.8;
     
     Rw = row.("Rw_Ohm_");
     Lw = row.("Lw_mH_") * 1e-3;
@@ -25,10 +26,17 @@ function [Rw, Lw, Km, Jm, Bm] = motor_params(motor_name)
     Jm = row.("Jm_gcm_2_") * 1e-3 * 1e-4;
     rpm_NL = row.("rpm_NL_rpm_");
     I_NL = row.("I_NL_mA_") * 1e-3;
+    gear_box_ratio = row.("GearboxRatio");
+    Istall = row.("StallCurrent_A_");
+
+    if (gear_box_ratio ~= 1)
+        Km = Km * GEAR_BOX_LOSS;
+    end
 
     % Friction is calculated from no load current no load speed
     w_NL = rpm_NL / 60 * 2*pi;
     Bm   = Km * I_NL / w_NL;
+    n = gear_box_ratio;
 end
 
 % ---------------- HELPER FUNCTIONS ----------------

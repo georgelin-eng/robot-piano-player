@@ -8,9 +8,26 @@ C2_PITCH = 36
 C5_PITCH = 72
 PITCHES_IN_OCTAVE = 12
 
+"""
+    input:  (int) MIDI number of the note
+    return: (int) number in [1, 6]
+
+    Must subtract -1 since octave starts at -1 for MIDI
+"""
 def get_octave(pitch):
     return int(pitch / PITCHES_IN_OCTAVE) - 1
 
+"""
+    input:  (str)   MIDI song_name. Must match exact name as the .mid files
+                    inside "songs"
+
+    return: list of classes pretty_midi.containers.Note 
+
+    Takes specified MIDI file from folder, collapses all tracks into the same one
+    then sorts by start time for each note. 
+
+    If a config yaml is specified, trim song to be bewteen 'start_time' and 'end_time'
+"""
 def midi_to_notes(song_name):
     # Make sure that MIDI file has just a single track or otherwise do some preprocessing
     pm = pretty_midi.PrettyMIDI(f"songs/{song_name}.mid")
@@ -47,6 +64,10 @@ def make_song_staccato(notes, note_length=0.5):
     return notes
 
 # TODO: Ask Rohan about how to do this so that the musicality is preserved
+"""
+    input:  list of notes
+    return: list of notes with pitches shifted to fit into octave 2 and 5
+"""
 def fit_song_into_keyboard(notes):
     for note in notes:
         note.pitch -= 12
