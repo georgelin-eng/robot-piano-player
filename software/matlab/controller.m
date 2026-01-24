@@ -34,25 +34,20 @@ OLTF = Ga * Gp * H;
 [Gm, Pm, wxo, ~] = margin(OLTF);
 K0 = Gm;
 
-Z1 = -12;
-Z2 = -12;
+Z1 = -1.56;
+Z2 = -1.56;
 
 Kp = 1/p - (Z1+Z2) / (Z1*Z2);
 Kd = 1/p * Kp + 1/(Z1*Z2);
 
 % Initial Guess
-K0 = K0 * 1;
 K_PID.Kp = Kp * K0;
 K_PID.Ki =   1* K0;
 K_PID.Kd = Kd * K0;
 
-K_PID.Kp = K_PID.Kp * 0.9953;
-K_PID.Ki = K_PID.Ki * 0.0587;
-K_PID.Kd = K_PID.Kd * 1.9847;
+K_PID = load_PID(motor_name, K_PID);
 
-K_PID.Kp = K_PID.Kp * 1.0186;
-K_PID.Ki = K_PID.Ki * 0.1411;
-K_PID.Kd = K_PID.Kd * 1.0398;
+% Make adjustments
 
 D = (K_PID.Kp) + (K_PID.Ki  / s) + (K_PID.Kd * -p * s / (s - p));
 Gc = D;
@@ -60,7 +55,7 @@ CLTF = G * D / (1 + G * H * D);
 
 iw_CLTF = CLTF / (1/s) / Ym / Km;
 w_CLTF  = CLTF / (1/s);
+tau_CLTF = iw_CLTF * Km;
 PWM_CLTF = CLTF / Gp / Ga;
 
 [Tr, Tp, Ts, OSu] = RCG_from_CLTF(CLTF);
-
