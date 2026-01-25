@@ -4,7 +4,6 @@ motor_name = '60PG-997-4.25-EN';
 % motor_name = '60PG-6055ZY';
 % motor_name = 'Polulu37D_64CPR';
 
-Mhand   = 0.43; % Test mass    [kg]
 CF      = 80;   % Control freq [Hz]
 DC      = 0.5;  % Duty cycle
 WnRes   = 2;    % Frequency search res
@@ -33,7 +32,8 @@ ZR1 = 1/B1;
 ZR2 = 1/B2;
 ZL1 = s * 1/K1;
 
-Zeq1 = RR(ZL1, ZR2) + ZC2;
+% Zeq1 = RR(ZL1, ZR2) + ZC2;
+Zeq = ZC2;
 Ztot = (1/ZC1 + 1/ZR1 + 1/Zeq1)^-1;
 Ztot = minreal(Ztot);
 
@@ -55,8 +55,23 @@ Hs = sensor_params;
 
 controller;
 
-K_out = Ktune(K_PID, G, H, p, 5.0, OSu);
+K_out = Ktune(K_PID, G, H, p, 0.3, OSu);
 save_PID(motor_name, K_out);
 
 % ---------- TESTING SOFT RAMP ----------
 % testbench;
+t = 0:2e-4:1.0;
+yd = 0.12; % 1 octave
+ramp_time = 0.1;
+u = soft_step(yd, ramp_time, t);
+% u = timeseries(soft_step(yd, ramp_time, t), t);
+simin = [t(:) u(:)];
+CPR = 14;
+encoder_freq = 20 * 1e3;
+T_encoder = 1/encoder_freq;
+
+% load_system('simulink_model.slx')
+
+data = out.simout.Data;
+time = out.simout.Time;
+plot(time, data);

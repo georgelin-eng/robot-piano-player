@@ -7,9 +7,7 @@ function lsim_CLTF(yd_targets, Ktj, ramp_time, CLTF, IS_POSITION)
         yd_eff = yd * Ktj;              % scaled setpoint
 
         % S-curve 
-        a = 2*pi / ramp_time;
-        u = yd_eff / (2*pi) * (a*t - sin(a*t));
-        u = min(yd_eff, u);
+        u = soft_step(yd_eff, ramp_time, t);
     
         y = lsim(CLTF, u, t);
         if (nargin == 5)
