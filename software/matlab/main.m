@@ -3,12 +3,12 @@ addpath("scripts/")
 motor_name = '60PG-997-4.25-EN';
 % motor_name = '60PG-6055ZY';
 % motor_name = 'Polulu37D_64CPR';
-
 CF      = 80;   % Control freq [Hz]
 DC      = 0.5;  % Duty cycle
 WnRes   = 2;    % Frequency search res
 ZetaRes = 0.05; % Damping factor search res
 TargPM  = 60;   % Target phase margin [degrees]
+Vmotor  = 24;   % DC voltage of motor
 
 % --------- MECH SYSTEM MODEL ---------
 [Rw, Lw, Km, Jm, Bm, n, Istall] = motor_params(motor_name);
@@ -60,13 +60,9 @@ save_PID(motor_name, K_out);
 
 % ---------- TESTING SOFT RAMP ----------
 % testbench;
-t = 0:2e-4:1.0;
-yd = 0.12; % 1 octave
-ramp_time = 0.1;
-u = soft_step(yd, ramp_time, t);
-% u = timeseries(soft_step(yd, ramp_time, t), t);
-simin = [t(:) u(:)];
-CPR = 14;
+
+% ENCODER PARAMETERS
+CPR = 14; % counts per revolution
 encoder_freq = 20 * 1e3;
 T_encoder = 1/encoder_freq;
 
@@ -75,3 +71,4 @@ T_encoder = 1/encoder_freq;
 data = out.simout.Data;
 time = out.simout.Time;
 plot(time, data);
+yline(yd);
