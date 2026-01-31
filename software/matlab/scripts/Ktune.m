@@ -23,8 +23,7 @@
 %   Yellow lines    - Represents +/- 2% error margin from 1.
 %   
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-function Ktune(K, G, H, p, Ts, OSu)
-    
+function K_out = Ktune(K, G, H, p, Ts, OSu)
     % main gui config
     fig = uifigure('Name', 'Ktune', 'Position', [100, 100, 800, 900]);
     ax = uiaxes(fig, 'Position', [50, 300, 600, 400]);
@@ -39,7 +38,7 @@ function Ktune(K, G, H, p, Ts, OSu)
     %
     
     % K0 SLIDER CONFIG
-    sliderK0 = uislider(fig, 'Position', [100, 300, 600, 4], 'Limits', [0.1, 2], 'Value', 1);
+    sliderK0 = uislider(fig, 'Position', [100, 300, 600, 4], 'Limits', [0.1, 3], 'Value', 1);
     labelK0  = uilabel(fig, 'Position', [100, 310, 200, 20], 'Text', 'K0 Multiplier: 1');
 
     % Kp SLIDER CONFIG
@@ -62,6 +61,14 @@ function Ktune(K, G, H, p, Ts, OSu)
     sliderKp.ValueChangedFcn = @(src, event) updatePlot();
     sliderKi.ValueChangedFcn = @(src, event) updatePlot();
     sliderKd.ValueChangedFcn = @(src, event) updatePlot();
+
+    % CloseRequestFcn: resume execution when user closes
+    fig.CloseRequestFcn = @(src,event) uiresume(fig);
+
+    % Wait until GUI closes
+    uiwait(fig);
+    onCloseGUI();
+    delete(fig);
 
     % plotting func
     function updatePlot()
@@ -87,8 +94,8 @@ function Ktune(K, G, H, p, Ts, OSu)
         plot(ax, t, y, 'k-', 'LineWidth', 1.5);
         hold(ax, 'on');
         plot(ax, xlim(ax), [1, 1], 'Color', [0.3010 0.7450 0.9330], 'LineStyle', '-', 'LineWidth', 1.1);
-        plot(ax, xlim(ax), [1.02, 1.02], 'Color', [0.9290 0.6940 0.1250], 'LineStyle', '-', 'LineWidth', 1.1);
-        plot(ax, xlim(ax), [0.98, 0.98], 'Color', [0.9290 0.6940 0.1250], 'LineStyle', '-', 'LineWidth', 1.1);
+        plot(ax, xlim(ax), [1.15, 1.15], 'Color', [0.9290 0.6940 0.1250], 'LineStyle', '-', 'LineWidth', 1.1);
+        plot(ax, xlim(ax), [0.85, 0.85], 'Color', [0.9290 0.6940 0.1250], 'LineStyle', '-', 'LineWidth', 1.1);
         plot(ax, xlim(ax), [(OSu / 100 + 1), (OSu / 100 + 1)], 'r--', 'LineWidth', 1.5);
         plot(ax, [Ts, Ts], ylim(ax), 'r--', 'LineWidth', 1.5);
         hold(ax, 'off');
@@ -101,4 +108,18 @@ function Ktune(K, G, H, p, Ts, OSu)
 
         grid(ax, 'on');
     end
+
+    function onCloseGUI()
+        % Read current slider values
+        K0Multiplier = sliderK0.Value;
+        KpMultiplier = sliderKp.Value * K0Multiplier;
+        KiMultiplier = sliderKi.Value * K0Multiplier;
+        KdMultiplier = sliderKd.Value * K0Multiplier;
+    
+        % Build the final PID struct
+        K_out.Kp = K.Kp * KpMultiplier;
+        K_out.Ki = K.Ki * KiMultiplier;
+        K_out.Kd = K.Kd * KdMultiplier;        
+    end
 end
+

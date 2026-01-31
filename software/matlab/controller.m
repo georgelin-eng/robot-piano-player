@@ -1,4 +1,4 @@
-CF = 1000;
+CF = 200;
 dt = 1/CF;
 PWM_freq = 10e3;
 Ka = 24; % 24V DC PWM applied to motor
@@ -34,31 +34,28 @@ OLTF = Ga * Gp * H;
 [Gm, Pm, wxo, ~] = margin(OLTF);
 K0 = Gm;
 
-% WnRes = 0.1 * 10^(round(log10(wxo))-1);
-
-% [PID.Z, PID.PM, PID.D] = MaxPM(wxo, Dp, K0, G, H, WnRes, ZetaRes, 2);
-% PID.Z = [-0.1050+2.0974i, -0.1050-2.0974i];
-
-Z1 = -1.31;
-Z2 = -1.31;
-
-% Z1 = PID.Z(1);
-% Z2 = PID.Z(2);
+Z1 = -1.56;
+Z2 = -1.56;
 
 Kp = 1/p - (Z1+Z2) / (Z1*Z2);
 Kd = 1/p * Kp + 1/(Z1*Z2);
 
-K0 = K0 * 0.1;
+% Initial Guess
 K_PID.Kp = Kp * K0;
 K_PID.Ki =   1* K0;
 K_PID.Kd = Kd * K0;
 
-Kmult = 1.6444;
-K_PID.Kp = 0.0037 * Kmult * 1.332;
-K_PID.Ki = 0.0025 * Kmult * 0.411;
-K_PID.Kd = 0.0013 * Kmult * 3.7246;
+K_PID = load_PID(motor_name, K_PID);
+
+% Make adjustments
 
 D = (K_PID.Kp) + (K_PID.Ki  / s) + (K_PID.Kd * -p * s / (s - p));
+Gc = D;
 CLTF = G * D / (1 + G * H * D);
+
+iw_CLTF = CLTF / (1/s) / Ym / Km;
+w_CLTF  = CLTF / (1/s);
+tau_CLTF = iw_CLTF * Km;
+PWM_CLTF = CLTF / Gp / Ga;
 
 [Tr, Tp, Ts, OSu] = RCG_from_CLTF(CLTF);
