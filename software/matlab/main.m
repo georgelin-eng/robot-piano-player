@@ -1,8 +1,6 @@
-% clear clc;
+clear clc;
 addpath("scripts/")
-motor_name = '60PG-997-4.25-EN';
-% motor_name = '60PG-6055ZY';
-% motor_name = 'Polulu37D_64CPR';
+motor_name = 'Polulu37D_64CPR';
 CF      = 80;   % Control freq [Hz]
 DC      = 0.5;  % Duty cycle
 WnRes   = 2;    % Frequency search res
@@ -10,13 +8,18 @@ ZetaRes = 0.05; % Damping factor search res
 TargPM  = 60;   % Target phase margin [degrees]
 Vmotor  = 24;   % DC voltage of motor
 
+IGNORE_TIMING_BELT = true;
+
 % --------- MECH SYSTEM MODEL ---------
 [Rw, Lw, Km, Jm, Bm, n, Istall] = motor_params(motor_name);
-% Rw = Rw * 0.8;
-% Lw = Lw * 10;
 plant_params;
 
 n1 = n;         % gearbox
+% n1 = 6.3; % 0.4918
+% n1 = 10; % 0.4696
+% n1 = 19; % 0.3741
+% n1 = 30;
+
 n2 = 1/Rpulley; % rotational to linear
 
 % Summing components
@@ -32,18 +35,21 @@ ZR1 = 1/B1;
 ZR2 = 1/B2;
 ZL1 = s * 1/K1;
 
-% Zeq1 = RR(ZL1, ZR2) + ZC2;
-Zeq = ZC2;
-Ztot = (1/ZC1 + 1/ZR1 + 1/Zeq1)^-1;
-Ztot = minreal(Ztot);
+switch IGNORE_TIMING_BELT
+    case true
+        Ztot = RR(RR(ZC1, ZC2), ZR1);
+        Ztot = minreal(Ztot);  
+    otherwise
+        % Accounting for timing belt as spring+damper in parallel
+        Zeq1 = RR(ZL1, ZR2) + ZC2;
+        Ztot = (1/ZC1 + 1/ZR1 + 1/Zeq1)^-1;
+        Ztot = minreal(Ztot);
+end
 
 nKm = Km; % joint space speed is same as motor speed
 
 Ye = 1/(s*Lw + Rw);
 Ym = Ztot;
-tau_spring = 10 * 1e-3; % Assume 10ms to propogate force through belt. 
-spring_del = 1/tau_spring / (s + 1/tau_spring);
-% Gp = feedback(Ye*nKm*spring_del*Ym, nKm) * 1/s;
 Gp = feedback(Ye*nKm*Ym, nKm) * 1/s;
 
 Kjt = 1/n2 * 1/n1;
@@ -54,21 +60,25 @@ Hs = sensor_params;
 % ---------- CONTROLLER DESIGN ----------
 
 controller;
-
-K_out = Ktune(K_PID, G, H, p, 0.3, OSu);
+K_out = Ktune(K_PID, G, H, p, 5.0, OSu);
 save_PID(motor_name, K_out);
+
+Kp = K_out.Kp;
+Ki = K_out.Ki;
+Kd = K_out.Kd;
 
 % ---------- TESTING SOFT RAMP ----------
 % testbench;
 
 % ENCODER PARAMETERS
+ramp_time = 0.1;
+yd = 0.02;
 CPR = 14; % counts per revolution
 encoder_freq = 20 * 1e3;
 T_encoder = 1/encoder_freq;
 
-% load_system('simulink_model.slx')
+t = 0:1e-3:2;
+u = soft_step(yd, ramp_time, t);
+simin = timeseries(u, t);
 
-data = out.simout.Data;
-time = out.simout.Time;
-plot(time, data);
-yline(yd);
+% simulink_parse;

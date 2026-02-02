@@ -18,7 +18,7 @@ function [Rw, Lw, Km, Jm, Bm, n, Istall] = motor_params(motor_name)
 
     motor_table = readtable('motors.xlsx');
     row = getMotorRow(motor_name, motor_table);
-    GEAR_BOX_LOSS = 0.8;
+    GEAR_BOX_LOSS = 0.9;
     
     Rw = row.("Rw_Ohm_");
     Lw = row.("Lw_mH_") * 1e-3;
