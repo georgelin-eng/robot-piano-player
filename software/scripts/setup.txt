@@ -1,7 +1,7 @@
-pinMode(A0, INPUT_PULLUP)
-pinMode(A1, INPUT_PULLUP)
-pinMode(A2, INPUT_PULLUP)
-pinMode(A3, OUTPUT)
-pinMode(4, INPUT_PULLUP)
-pinMode(5, INPUT_PULLUP)
-pinMode(6, OUTPUT)
+pinMode(A0, INPUT); // current_sense_i
+pinMode(A1, INPUT); // ENCA_i
+pinMode(A2, INPUT); // ENCB_i
+pinMode(A3, OUTPUT); // PWM_o
+pinMode(4, INPUT); // prox_sens_i
+pinMode(5, INPUT); // fault_detected_n
+pinMode(6, OUTPUT); // PWM_dir_o
