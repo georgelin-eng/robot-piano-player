@@ -134,9 +134,7 @@ void loop() {
         interrupts();
 
 
-        //Res 64 -> 360 deg 
-        // PulseCount * 64/360 = angle change
-        absolute_angle_rad = pulseCount * 64/2pi;
+
     }
     /*
     struct command {
@@ -189,6 +187,9 @@ void loop() {
         //Start parsing actions
         if (command[i].action == RIGHT_MOVE){
             wanted_absolute_angle_rad = action[i].position;
+            //Res 64 -> 360 deg 
+            // PulseCount * 64/360 = angle change
+            absolute_angle_rad = pulseCount * 64/2pi;
             error = wanted_absolute_angle_rad - absolute_angle_rad;
         }
 
@@ -209,6 +210,9 @@ void loop() {
         //Envelope with time constraint of action lenght? 
         //millis/1000 -> convert both to secodns.
         while (abs(error) >= ???????) {
+            //Res 64 -> 360 deg 
+            // PulseCount * 64/360 = angle change
+            absolute_angle_rad = pulseCount * 64/2pi;
             currentMicros = micros();
             if(currentMicros - previousMicros >= control_interval){
                 previousMicros = currentMicros;
