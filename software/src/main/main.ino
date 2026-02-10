@@ -1,25 +1,33 @@
 #include <stdio.h>
-#include "pins.h"
+#include "RP2040_PWM.h"
 
-enum eLogSubSystem {
-    FSM,
-    MOTOR_CONTROL,
-    HOMING,
-    ENCODER,
-    PWM
-};
-
-enum eLogLevel {
-    NONE   = 0,
-    LOW    = 100,
-    MEDIUM = 200,
-    HIGH   = 300,
-    FULL   = 400,
-    DEBUG  = 500
-};
-
-#define GLOBAL_LOG_LEVEL MEDIUM
 #define RAD_PER_PULSE 0.0981747704247; // 2pi / 64.
+#define ENCA_pin A1
+#define ENCB_pin A2
+#define PWM_pin  A3
+
+// enum eLogSubSystem {
+//     FSM,
+//     MOTOR_CONTROL,
+//     HOMING,
+//     ENCODER,
+//     PWM
+// };
+
+// enum eLogLevel {
+//     NONE   = 0,
+//     LOW    = 100,
+//     MEDIUM = 200,
+//     HIGH   = 300,
+//     FULL   = 400,
+//     DEBUG  = 500
+// };
+
+// #define GLOBAL_LOG_LEVEL MEDIUM
+
+//creates pwm instance
+RP2040_PWM* PWM_Instance;
+
 volatile long pulseCount = 0;
 float GLOBAL_POSITION_RAD;
 float GLOBAL_POSITION_M;
@@ -38,16 +46,20 @@ void setup() {
     attachInterrupt(digitalPinToInterrupt(A1), A_negedge, FALLING);
     attachInterrupt(digitalPinToInterrupt(A2), B_posedge, RISING);
     attachInterrupt(digitalPinToInterrupt(A2), B_negedge, FALLING);
+
+    // PWM setup. 20KHz
+    PWM_Instance = new RP2040_PWM(PWM_pin, 20000, 0);
+
 }
 
 /*
-CW: A leading B
+CCW: A leading B
      ┌───┐     ┌───┐
 A ───┘   └─────┘   └───
        ┌───┐     ┌───┐
 B   ───┘   └─────┘   └───
 
-CCW: B leading A
+CW: B leading A
        ┌───┐     ┌───┐
 A   ───┘   └─────┘   └───
      ┌───┐     ┌───┐
@@ -60,15 +72,6 @@ Convert pulse count to global position (rad) inside the PID which fires at 80Hz
 */
 
 void A_posedge() {
-    if (digitalRead(ENCB_pin) == 0) { // CW
-        pulseCount++;
-    } // CCW
-    else {
-        pulseCount--;
-    }
-}
-
-void A_negedge() {
     if (digitalRead(ENCB_pin) == 1) { // CW
         pulseCount++;
     } // CCW
@@ -77,8 +80,17 @@ void A_negedge() {
     }
 }
 
+void A_negedge() {
+    if (digitalRead(ENCB_pin) == 0) { // CW
+        pulseCount++;
+    } // CCW
+    else {
+        pulseCount--;
+    }
+}
+
 void B_posedge() {
-    if (digitalRead(ENCA_pin) == 1) { // CW
+    if (digitalRead(ENCA_pin) == 0) { // CW
         pulseCount++;
     } // CCW
     else {
@@ -87,7 +99,7 @@ void B_posedge() {
 }
 
 void B_negedge() {
-    if (digitalRead(ENCA_pin) == 0) { // CW
+    if (digitalRead(ENCA_pin) == 1) { // CW
         pulseCount++;
     } // CCW
     else {
@@ -97,26 +109,35 @@ void B_negedge() {
 
 // TODO: Get timers working and start logging encoder reads
 void loop() {
-    // put your main code here, to run repeatedly:
+    static unsigned long lastLogTime = 0;
+    const unsigned long logInterval  = 500; // ms
 
-    noInterrupts();
-    Log(ENCODER, MEDIUM, "pulseCount == %ld", pulseCount);
-    Interrupts();
+    if (millis() - lastLogTime >= logInterval) {
+        lastLogTime = millis();
 
+        noInterrupts();
+        Serial.print("[ENCODER] pulseCount == ");
+        Serial.print(pulseCount);
+        Serial.print("\n");
+
+        // 20Khz - 10% DC
+        PWM_Instance->setPWM(PWM_pin, 20000, 10);
+
+        interrupts();
+    }
 }
-
-
+ 
 // TODO: Make option to print only certain subsystems
-void Log(enum eLogSubSystem sys, enum eLogLevel level, char *msg) {
-    const char* logSubSystemNames[] = {
-        "FSM",
-        "MOTOR_CONTROL",
-        "HOMING",
-        "ENCODER",
-        "PWM"
-    };
+// void Log(enum eLogSubSystem sys, enum eLogLevel level, char *msg) {
+//     const char* logSubSystemNames[] = {
+//         "FSM",
+//         "MOTOR_CONTROL",
+//         "HOMING",
+//         "ENCODER",
+//         "PWM"
+//     };
 
-    if (level > GLOBAL_LOG_LEVEL) return;
+//     if (level > GLOBAL_LOG_LEVEL) return;
 
-    Serial.print("[%s] %s\n", logSubSystemNames[sys], msg);
-}
+//     Serial.print("[%s] %s\n", logSubSystemNames[sys], msg);
+// }
