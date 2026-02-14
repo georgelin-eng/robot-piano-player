@@ -15,10 +15,6 @@ IGNORE_TIMING_BELT = true;
 plant_params;
 
 n1 = n;         % gearbox
-% n1 = 6.3; % 0.4918
-% n1 = 10; % 0.4696
-% n1 = 19; % 0.3741
-% n1 = 30;
 
 n2 = 1/Rpulley; % rotational to linear
 

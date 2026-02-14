@@ -1,36 +1,75 @@
-#include <stdio.h>
-#include "RP2040_PWM.h"
+#include <stdio.h>       // Standard IO
+#include "RP2040_PWM.h"  // PWM
+#include "pins.h"        // pin to variable mappings
+#include "commands.h"    // command table
+#include "peripherals.h" // ISRs for interacting with peripherals
 
-#define RAD_PER_PULSE 0.0981747704247; // 2pi / 64.
-#define ENCA_pin A1
-#define ENCB_pin A2
-#define PWM_pin  A3
+#define RAD_PER_PULSE 0.0981747704247  // 2pi / 64.
+#define KJT 0.00097000000000000005055  // joint-to-task space: 1:10 gearbox + 17.4mm diameter pulley 
+#define KTJ 1030.9278350515462535      // task-to-joint space
 
-// enum eLogSubSystem {
-//     FSM,
-//     MOTOR_CONTROL,
-//     HOMING,
-//     ENCODER,
-//     PWM
-// };
+#define POS_ERR_THRS   (3 * 0.001)     // 3mm precision
+#define ANGLE_ERR_THRS (POS_ERR_THRS * KTJ)
 
-// enum eLogLevel {
-//     NONE   = 0,
-//     LOW    = 100,
-//     MEDIUM = 200,
-//     HIGH   = 300,
-//     FULL   = 400,
-//     DEBUG  = 500
-// };
+#define PWM_FREQ 20000 // 20KHz
 
-// #define GLOBAL_LOG_LEVEL MEDIUM
+// Logging parameters
+enum eLogLevel {
+    LOG_NONE   = 0,
+    LOG_LOW    = 100,
+    LOG_MEDIUM = 200,
+    LOG_HIGH   = 300,
+    LOG_FULL   = 400,
+    LOG_DEBUG  = 500
+};
+
+#define GLOBAL_LOG_LEVEL LOG_MEDIUM
+#define TEST_MODE_ENABLED 1
+
+char MSG_BUFFER[64]; // global message buffer for serial logging
 
 //creates pwm instance
 RP2040_PWM* PWM_Instance;
 
+// Motor control variables
 volatile long pulseCount = 0;
-float GLOBAL_POSITION_RAD;
-float GLOBAL_POSITION_M;
+volatile float ANGLE;
+volatile float POSITION;
+
+// FSM 
+enum eFSM_STATE {
+    IDLE,
+    HOME,
+    RUN,
+    PAUSE, 
+    ERROR,
+    POWERDOWN,
+
+    // Tests for software bringup
+    TEST, 
+    SOFT_STOP,
+    HARD_STOP,
+    MOVE_CW_HOME,
+    MOVE_CCW_HOME,
+    CW_SOFT_RAMP,
+    CCW_SOFT_RAMP,
+    MOVE_CW_PID,
+    MOVE_CCW_PID,
+    SLOW_RAMP
+};
+
+  
+enum eTestCase {
+    spin_direction_home_test,
+    soft_start_test,
+    position_drift_test,
+    motor_intertia_test
+};
+
+eFSM_STATE state = IDLE;
+eTestCase  test_case = motor_intertia_test;
+
+// ------------------------ S E T U P    C O D E    B E G I N ------------------------
 
 void setup() {
     pinMode(A0, INPUT); // current_sense_i
@@ -47,102 +86,95 @@ void setup() {
     attachInterrupt(digitalPinToInterrupt(A2), B_posedge, RISING);
     attachInterrupt(digitalPinToInterrupt(A2), B_negedge, FALLING);
 
-    // PWM setup. 20KHz
-    PWM_Instance = new RP2040_PWM(PWM_pin, 20000, 0);
+    // PWM setup w/ 0% DC
+    PWM_Instance = new RP2040_PWM(PWM_pin, PWM_FREQ, 0);
 
 }
 
-/*
-CCW: A leading B
-     ┌───┐     ┌───┐
-A ───┘   └─────┘   └───
-       ┌───┐     ┌───┐
-B   ───┘   └─────┘   └───
-
-CW: B leading A
-       ┌───┐     ┌───┐
-A   ───┘   └─────┘   └───
-     ┌───┐     ┌───┐
-B ───┘   └─────┘   └───
-
-For a quadratrue encoder on a pos/neg edge depending on the value of the opposite phase,
-we can know if the motor is rotating CW or CCW
-
-Convert pulse count to global position (rad) inside the PID which fires at 80Hz
-*/
-
-void A_posedge() {
-    if (digitalRead(ENCB_pin) == 1) { // CW
-        pulseCount++;
-    } // CCW
-    else {
-        pulseCount--;
-    }
-}
-
-void A_negedge() {
-    if (digitalRead(ENCB_pin) == 0) { // CW
-        pulseCount++;
-    } // CCW
-    else {
-        pulseCount--;
-    }
-}
-
-void B_posedge() {
-    if (digitalRead(ENCA_pin) == 0) { // CW
-        pulseCount++;
-    } // CCW
-    else {
-        pulseCount--;
-    }
-}
-
-void B_negedge() {
-    if (digitalRead(ENCA_pin) == 1) { // CW
-        pulseCount++;
-    } // CCW
-    else {
-        pulseCount--;
-    }
-}
-
+// ------------------------ M A I N    C O D E    B E G I N ------------------------
 
 // TODO: Get timers working and start logging encoder reads
 void loop() {
+
     //Printing for encoder
     static unsigned long lastLogTime = 0;
     const unsigned long logInterval  = 500; // ms
 
     double absolute_angle_rad;
+    uin8_t pwm_dc;    
 
-    int kp = 1;
-    int ki = 1;
-    int kd = 1;
+    float kp = 0.003100008993921;
+    float ki = 0.0000410086921359;
+    float kd = 0.001340560346924;
+
+    // --------- FSM BEGIN ---------
+    switch(state) {
+        case(IDLE):
+            if (TEST_MODE_ENABLED) {
+                pwm_dc = 0;
+                state = TEST;
+            }
+            break;
+        case(TEST):
+            switch (test_case) {
+                case (spin_direction_home_test):
+                    state = MOVE_CW_HOME;
+                    break;
+                case (soft_start_test):
+                    state = CW_SOFT_RAMP;
+                    break;
+                case (position_drift_test):
+                    state = MOVE_CW_PID;
+                    break;
+                case (motor_intertia_test):
+                    state = SLOW_RAMP;
+                    break;
+            }
+        case (SLOW_RAMP):
+            // Increase PWM DC to 100% +1% every 10ms
+            PWM_Instance->setPWM(PWM_pin, PWM_FREQ, pwm_dc);
+
+            if (millis() - lastLogTime >= logInterval) {
+                lastLogTime = millis();
+                pwm_dc = pwm_dc - 1;
+
+                sprintf(MSG_BUFFER, "pulseCount == %ld", pulseCount);
+                Log("ENCODER", MSG_BUFFER, LOG_MEDIUM);
+
+                // 20Khz - 10% DC
+                PWM_Instance->setPWM(PWM_pin, PWM_FREQ, 10);
+
+            }
+
+
+        case (HARD_STOP):
+            PWM_Instance->setPWM(PWM_pin, PWM_FREQ, 0);
+
+        case (SOFT_STOP):
+            // Decrease PWM DC to 0%  -1% every 10ms. 
+            PWM_Instance->setPWM(PWM_pin, PWM_FREQ, pwm_dc);
+
+        case(ERROR):
+            state = ERROR;
+        default:
+            Log ("FSM", "Unhandled State!", LOG_NONE);
+            state = ERROR;
+    }
 
     if (millis() - lastLogTime >= logInterval) {
         lastLogTime = millis();
 
         noInterrupts();
-        Serial.print("[ENCODER] pulseCount == ");
-        Serial.print(pulseCount);
-        Serial.print("\n");
+        sprintf(MSG_BUFFER, "pulseCount == %ld", pulseCount);
+        Log("ENCODER", MSG_BUFFER, LOG_MEDIUM);
 
         // 20Khz - 10% DC
-        PWM_Instance->setPWM(PWM_pin, 20000, 10);
+        PWM_Instance->setPWM(PWM_pin, PWM_FREQ, 10);
 
         interrupts();
-
-
-
     }
+  
     /*
-    struct command {
-        uint_8 action;
-        uint_16 solenoid_or_position;
-        float start_time;
-        float end_time;
-    };
 
     <ACTION, SOLENOID_OR_POSITION, START_TIME, END_TIME >
         
@@ -167,6 +199,8 @@ void loop() {
     end_time (float)
     */
 
+    /*
+
     double wanted_absolute_angle_rad;
     double error;
     double dError;
@@ -189,7 +223,7 @@ void loop() {
             wanted_absolute_angle_rad = action[i].position;
             //Res 64 -> 360 deg 
             // PulseCount * 64/360 = angle change
-            absolute_angle_rad = pulseCount * 64/2pi;
+            absolute_angle_rad = pulseCount * RAD_PER_PULSE;
             error = wanted_absolute_angle_rad - absolute_angle_rad;
         }
 
@@ -232,22 +266,16 @@ void loop() {
             //Wait till we are ready for the next instruction.
         }
     }
-
+    */
 }
 
+void Log(const char* ID, const char *MSG, enum eLogLevel level) {
+    if (level > GLOBAL_LOG_LEVEL) return;
 
- 
-// TODO: Make option to print only certain subsystems
-// void Log(enum eLogSubSystem sys, enum eLogLevel level, char *msg) {
-//     const char* logSubSystemNames[] = {
-//         "FSM",
-//         "MOTOR_CONTROL",
-//         "HOMING",
-//         "ENCODER",
-//         "PWM"
-//     };
-
-//     if (level > GLOBAL_LOG_LEVEL) return;
-
-//     Serial.print("[%s] %s\n", logSubSystemNames[sys], msg);
-// }
+    // Equivalent to 
+    // printf("[%s], %s\n", ID, MSG)
+    Serial.print("[");
+    Serial.print(ID);
+    Serial.print("], ");
+    Serial.println(MSG);
+}
