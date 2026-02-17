@@ -40,5 +40,6 @@ M_SBR12UU = 80;
 Mplatform = 448.03202;
 SAFTEY_FACTOR = 1.0;
 
-Mhand_grams = Msolenoid * 9 + Mplatform + M_SBR12UU * 2;
+% Mhand_grams = Msolenoid * 9 + Mplatform + M_SBR12UU * 2;
+Mhand_grams = Mplatform + M_SBR12UU * 2;
 Mhand = Mhand_grams * 1e-3;

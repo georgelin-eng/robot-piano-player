@@ -140,16 +140,16 @@ void loop() {
 
     const static struct K_PID PID_left = 
     {
-        .Kp = 0.0054,
-        .Ki = 0.00015645,
-        .Kd = 0.00098194
+        .Kp = 0.0081;
+        .Ki = 0.00014359;
+        .Kd = 0.00054975;
     };
 
     const static struct K_PID PID_right = 
     {
-        .Kp = 0.0054,
-        .Ki = 0.00015645,
-        .Kd = 0.00098194
+        .Kp = 0.0081;
+        .Ki = 0.00014359;
+        .Kd = 0.00054975;
     };
 
     // --------- FSM BEGIN ---------
