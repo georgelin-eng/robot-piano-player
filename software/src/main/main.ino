@@ -1,14 +1,16 @@
+// #define DRV8263H
+
 #include <stdio.h>       // Standard IO
 #include "RP2040_PWM.h"  // PWM
 #include "pins.h"        // pin to variable mappings
 #include "commands.h"    // command table
 #include "peripherals.h" // ISRs for interacting with peripherals
 
-#define RAD_PER_PULSE 0.0981747704247  // 2pi / 64.
+#define RAD_PER_PULSE 0.0981747704247*2  // 2pi / 64.
 #define KJT 0.00097000000000000005055  // joint-to-task space: 1:10 gearbox + 17.4mm diameter pulley 
 #define KTJ 1030.9278350515462535      // task-to-joint space
 
-#define POS_ERR_THRS   (3 * 0.001)     // 3mm precision
+#define POS_ERR_THRS   (10 * 0.001)     // 3mm precision
 #define ANGLE_ERR_THRS (POS_ERR_THRS * KTJ)
 
 #define PWM_FREQ 20000 // 20KHz
@@ -70,7 +72,7 @@ enum eTestCase {
 };
 
 eFSM_STATE state = IDLE;
-eTestCase  test_case = motor_intertia_test;
+eTestCase  test_case = position_drift_test;
 
 struct K_PID {
     float Kp;
@@ -90,10 +92,10 @@ void setup() {
     pinMode(6, OUTPUT); // PWM_dir_o
 
     // Count positive and negative edges encoder to achieve max 64CPR resolution
-    attachInterrupt(digitalPinToInterrupt(A1), A_posedge, RISING);
-    attachInterrupt(digitalPinToInterrupt(A1), A_negedge, FALLING);
-    attachInterrupt(digitalPinToInterrupt(A2), B_posedge, RISING);
-    attachInterrupt(digitalPinToInterrupt(A2), B_negedge, FALLING);
+    attachInterrupt(digitalPinToInterrupt(ENCA_pin), A_posedge, RISING);
+    attachInterrupt(digitalPinToInterrupt(ENCA_pin), A_negedge, FALLING);
+    attachInterrupt(digitalPinToInterrupt(ENCB_pin), B_posedge, RISING);
+    attachInterrupt(digitalPinToInterrupt(ENCB_pin), B_negedge, FALLING);
 
     // PWM setup w/ 0% DC
     PWM1_Instance = new RP2040_PWM(PWM1_pin, PWM_FREQ, 0);
@@ -119,18 +121,17 @@ void loop() {
     
     static unsigned long prev_move_right_time = 0;
     static unsigned long prev_move_left_time = 0;
-    const static unsigned long control_interval = 1/(80*1e-3);
+    const static double control_interval = 1/80.0;
 
-    double measured_absolute_angle_rad;
-    double wanted_absolute_angle_rad;
-    double error;
-    double dError;
-    double error_sum;
-    double prev_error;
-    double output;
+    static double measured_absolute_angle_rad;
+    static double wanted_absolute_angle_rad;
+    static double error;
+    static double dError;
+    static double error_sum;
+    static double prev_error;
+    static double output;
 
-    uint8_t pwm1_dc;    
-    uint8_t pwm2_dc;    
+    int pwm_dc;    
 
     double speed;
 
@@ -140,23 +141,22 @@ void loop() {
 
     const static struct K_PID PID_left = 
     {
-        .Kp = 0.0081;
-        .Ki = 0.00014359;
-        .Kd = 0.00054975;
+        .Kp = 0.0081*10,
+        .Ki = 0.00014359,
+        .Kd = 0.00054975
     };
 
     const static struct K_PID PID_right = 
     {
-        .Kp = 0.0081;
-        .Ki = 0.00014359;
-        .Kd = 0.00054975;
+        .Kp = 0.0081 * 20,
+        .Ki = 0.00014359,
+        .Kd = 0.00054975
     };
 
     // --------- FSM BEGIN ---------
     switch(state) {
         case(IDLE):
-            pwm1_dc = 0;
-            pwm2_dc = 0;
+            pwm_dc = 0;
 
             if (TEST_MODE_ENABLED) {
                 state = TEST;
@@ -168,6 +168,8 @@ void loop() {
         case(TEST):
             Log("FSM", "Starting Test...", LOG_LOW);
 
+            error_sum = 0;
+
             switch (test_case) {
                 case (spin_direction_home_test):
                     Log("FSM", "Starting spin_direction_home_test", LOG_LOW);
@@ -177,6 +179,8 @@ void loop() {
                     state = LEFT_SOFT_RAMP;
                     break;
                 case (position_drift_test):
+                    Log("FSM", "Starting position_drift_test", LOG_LOW);
+
                     state = MOVE_LEFT_PID;
                     break;
                 case (motor_intertia_test):
@@ -193,14 +197,13 @@ void loop() {
             if (millis() - prev_ramp_time >= ramp_interval) {
                 prev_ramp_time = millis();
 
-                if (pwm1_dc < 100) {
-                    pwm1_dc = pwm1_dc + 1;
-                    sprintf(MSG_BUFFER, "pwm1_dc == %d", pwm1_dc);
+                if (pwm_dc < 100) {
+                    pwm_dc = pwm_dc + 1;
+                    sprintf(MSG_BUFFER, "pwm_dc == %d", pwm_dc);
                     Log("FSM", MSG_BUFFER, LOG_MEDIUM);
 
                     // 20Khz - 10% DC
-                    PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100 - pwm1_dc);
-                    PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100);
+                    set_left_PWM(pwm_dc);
 
                 }
                 else {
@@ -211,8 +214,7 @@ void loop() {
         
         case(MOVE_LEFT_HOME):
             //Start PWM 1, set PWM 2 to 3.3V
-            PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100);
-            PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 80);
+            set_left_PWM(20);
             Log("FSM", "Moving left", LOG_MEDIUM);
 
             delay(move_interval);
@@ -220,8 +222,7 @@ void loop() {
             break;
         case(MOVE_RIGHT_HOME):
             //start PWM2, set PWM 1 to 3.3V
-            PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 80);
-            PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100);
+            set_right_PWM(20);
             Log("FSM", "Moving right", LOG_MEDIUM);
 
             delay(move_interval);
@@ -229,10 +230,8 @@ void loop() {
             break;
 
         case (HARD_STOP):
-            pwm1_dc = 0;
-            pwm2_dc = 0;
-            PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100-pwm1_dc);
-            PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100-pwm2_dc);
+            set_left_PWM(0);
+            set_right_PWM(0);
 
             if (millis() - prev_log_time >= 10) {
                 prev_log_time = millis();
@@ -259,52 +258,106 @@ void loop() {
             if (millis() - prev_ramp_time >= ramp_interval) {
                 prev_ramp_time = millis();
 
-                if (pwm1_dc > 0 && pwm2_dc > 0) {
-                    pwm1_dc = pwm1_dc - 1;
-                    pwm2_dc = pwm2_dc - 1;
+                if (pwm_dc > 0) {
+                    pwm_dc = pwm_dc - 1;
 
-                    sprintf(MSG_BUFFER, "pwm1_dc == %d, pwm2_dc == %d", pwm1_dc, pwm2_dc);
+                    sprintf(MSG_BUFFER, "pwm_dc == %d", pwm_dc);
                     Log("FSM", MSG_BUFFER, LOG_MEDIUM);
 
-                    PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100 - pwm1_dc);
-                    PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100 - pwm2_dc);
+                    set_left_PWM(pwm_dc);
+                    set_right_PWM(pwm_dc);
                 }
             }
             break;
             
         case(MOVE_RIGHT_PID):
-            if (abs(error) < 0.01) state = MOVE_LEFT_PID;
+            wanted_absolute_angle_rad = 0.050 * KTJ;
+            error = wanted_absolute_angle_rad - measured_absolute_angle_rad;
 
-            if(millis() - prev_move_right_time >= control_interval){
+            if (abs(error) < ANGLE_ERR_THRS) {
+                state = MOVE_LEFT_PID;
+                error_sum=0;
+                prev_error = 0;
+            }
+
+            if(millis() - prev_move_right_time >= control_interval*1e-3){
                 prev_move_right_time = millis();
 
+                diff_pulseCount = pulseCount - prev_pulseCount;
+                speed = RAD_PER_PULSE*diff_pulseCount/control_interval;
+                prev_pulseCount = pulseCount;
+
                 //Get initial error signal
-                error = wanted_absolute_angle_rad - measured_absolute_angle_rad;
 
                 //Calculate integral and different terms (converting control interval into seconds)
-                dError = (error - prev_error) / (control_interval*1e-3); 
-                error_sum+= error_sum*control_interval*1e-6;
+                dError = (error - prev_error) / control_interval; 
+                // if (speed > 1.0) {
+                    error_sum = error_sum + error*control_interval;
+                // }
+                if (abs(error_sum) > 3482) error_sum / abs(error_sum) * 3482;
+
                 output = PID_right.Kp*error + PID_right.Ki*error_sum + PID_right.Kd*dError;
                 prev_error = error;
 
+                if (output > 1.0) output = 1.0;
+                else if (output < -1.0)  output = -1.0;
+
+                if (output > 0) set_right_PWM((int)output*100);
+                else set_left_PWM((int) abs(output)*100);
+
+
+                sprintf(MSG_BUFFER, "wanted = %0.5f, measured=%0.5f", wanted_absolute_angle_rad, measured_absolute_angle_rad);
+                Log("MOVE_RIGHT_PID", MSG_BUFFER, LOG_MEDIUM);
+
+                sprintf(MSG_BUFFER, "output = %d, error=%0.5f, error_sum=%0.5f, dError=%0.5f", (int) output*100, error, error_sum, dError);
+                Log("MOVE_RIGHT_PID", MSG_BUFFER, LOG_MEDIUM);
             }
 
             break;
         
         case(MOVE_LEFT_PID):
-            if (abs(error) < 0.01) state = SLOW_RAMP;
+            wanted_absolute_angle_rad = -0.050 * KTJ;
+            error = wanted_absolute_angle_rad - measured_absolute_angle_rad;
 
-            if(millis() - prev_move_right_time >= control_interval){ 
+            if (abs(error) < ANGLE_ERR_THRS) {
+                state = MOVE_RIGHT_PID;
+                prev_error = 0;
+                error_sum = 0;
+            } 
+
+            if(millis() - prev_move_right_time >= control_interval*1e-3){ 
                 prev_move_right_time = millis();
+
+                diff_pulseCount = pulseCount - prev_pulseCount;
+                speed = RAD_PER_PULSE*diff_pulseCount/control_interval;
+                prev_pulseCount = pulseCount;
 
                 //Get initial error signal
                 error = wanted_absolute_angle_rad - measured_absolute_angle_rad;
 
                 //Calculate integral and different terms (converting control interval into seconds)
-                dError = (error - prev_error) / (control_interval*1e-6); 
-                error_sum+= error_sum*control_interval*1e-6;
+                dError = (error - prev_error) / (control_interval); 
+
+                // if (speed > 1.0) {
+                    error_sum = error_sum + error*control_interval;
+                // }
+                if (abs(error_sum) > 3482) error_sum / abs(error_sum) * 3482;
+
                 output = PID_left.Kp*error + PID_left.Ki*error_sum + PID_left.Kd*dError;
                 prev_error = error;
+
+                if (output > 1.0) output = 1.0;
+                else if (output < -1.0) output = -1.0;
+
+                if(output > 0) set_right_PWM((int) output*100);
+                else set_left_PWM((int) abs(output*100));
+
+
+                sprintf(MSG_BUFFER, "wanted = %0.5f, measured=%0.5f", wanted_absolute_angle_rad, measured_absolute_angle_rad);
+                Log("MOVE_LEFT_PID", MSG_BUFFER, LOG_MEDIUM);
+
+                sprintf(MSG_BUFFER, "output = %d, error=%0.5f, error_sum=%0.5f, dError=%0.5f", (int) output*100, error, error_sum, dError);
+                Log("MOVE_LEFT_PID", MSG_BUFFER, LOG_MEDIUM);
             }
             
             break;
@@ -420,6 +473,35 @@ void loop() {
     }
     */
 }
+
+/*
+    When using DRV8263H board, DRVOFF needs to be attached to 3.3V and sleep to GND
+    Treat PWM2_pin as PH pin for left and right control (1/0) and PWM1 as main (PWM)
+
+    When using Hbridge, optoisolators are referenced to 3.3V so inverse of DC is required
+    Left vs right control is achieved by difference between PWM1 and PWM2. 
+    For simplicity the opposite side is completely turned off via setting PWM to 100
+*/
+void set_left_PWM(int pwm_dc) {
+    #ifdef DRV8263H 
+        PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, pwm_dc);
+        PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100);
+    #else
+        PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100);
+        PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100 - pwm_dc);
+    #endif
+}
+
+void set_right_PWM(int pwm_dc) {
+    #ifdef DRV8263H 
+        PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, pwm_dc);
+        PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 0);
+    #else
+        PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100 - pwm_dc);
+        PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100);
+    #endif
+}
+
 
 void Log(const char* ID, const char *MSG, enum eLogLevel level) {
     if (level > GLOBAL_LOG_LEVEL) return;
