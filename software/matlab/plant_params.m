@@ -34,8 +34,11 @@ Jgearbox = Js + Np * Rs^2/4 * (1/Rp^2*Jp + mp) + (Rs/(2*(Rs+Rp)))^2*Jc;
 % Calculation of test mass
 Mbolt = 47;
 Mwire = 43.5000;
-Macrylic = 4;
+Macrylic = 40;
 Msolenoid = Mbolt + Mwire + Macrylic;
+M_SBR12UU = 80;
+Mplatform = 448.03202;
 SAFTEY_FACTOR = 1.0;
 
-Mhand = Msolenoid * 9 * 1e-3 * SAFTEY_FACTOR;
+Mhand_grams = Msolenoid * 9 + Mplatform + M_SBR12UU * 2;
+Mhand = Mhand_grams * 1e-3;

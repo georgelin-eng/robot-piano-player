@@ -19,7 +19,7 @@ n1 = n;         % gearbox
 n2 = 1/Rpulley; % rotational to linear
 
 % Summing components
-J1 = Jm + Jgearbox + Jpulley/n1^2 + Jbelt/n1^2;
+J1 = Jm*1.1 * 0.7 + Jpulley/n1^2 + Jbelt/n1^2;
 J2 = Mhand * 1/n1^2 * 1/n2^2;
 B1 = Bm;
 B2 = Brail * 1/n1^2 * 1/n2^2;
@@ -56,7 +56,7 @@ Hs = sensor_params;
 % ---------- CONTROLLER DESIGN ----------
 
 controller;
-K_out = Ktune(K_PID, G, H, p, 5.0, OSu);
+K_out = Ktune(K_PID, G, H, p, 1.0, OSu);
 save_PID(motor_name, K_out);
 
 Kp = K_out.Kp;

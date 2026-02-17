@@ -34,6 +34,8 @@ RP2040_PWM* PWM2_Instance;
 
 // Motor control variables
 volatile long pulseCount = 0;
+volatile long prev_pulseCount;
+volatile long diff_pulseCount;
 volatile float ANGLE;
 volatile float POSITION;
 
@@ -68,7 +70,13 @@ enum eTestCase {
 };
 
 eFSM_STATE state = IDLE;
-eTestCase  test_case = spin_direction_home_test;
+eTestCase  test_case = motor_intertia_test;
+
+struct K_PID {
+    float Kp;
+    float Ki;
+    float Kd;
+};
 
 // ------------------------ S E T U P    C O D E    B E G I N ------------------------
 
@@ -108,14 +116,41 @@ void loop() {
 
     static unsigned long prev_move_time = 0;
     const static unsigned long move_interval = 500; // ms
+    
+    static unsigned long prev_move_right_time = 0;
+    static unsigned long prev_move_left_time = 0;
+    const static unsigned long control_interval = 1/(80*1e-3);
 
-    double absolute_angle_rad;
+    double measured_absolute_angle_rad;
+    double wanted_absolute_angle_rad;
+    double error;
+    double dError;
+    double error_sum;
+    double prev_error;
+    double output;
+
     uint8_t pwm1_dc;    
     uint8_t pwm2_dc;    
 
-    float kp = 0.003100008993921;
-    float ki = 0.0000410086921359;
-    float kd = 0.001340560346924;
+    double speed;
+
+    measured_absolute_angle_rad = pulseCount * RAD_PER_PULSE;
+    // TODO: Might need gain scheduling for left vs right side response
+    // Linear interpolation of PID not needed. Can use basic piecewaise gain schedule
+
+    const static struct K_PID PID_left = 
+    {
+        .Kp = 0.0054,
+        .Ki = 0.00015645,
+        .Kd = 0.00098194
+    };
+
+    const static struct K_PID PID_right = 
+    {
+        .Kp = 0.0054,
+        .Ki = 0.00015645,
+        .Kd = 0.00098194
+    };
 
     // --------- FSM BEGIN ---------
     switch(state) {
@@ -145,7 +180,10 @@ void loop() {
                     state = MOVE_LEFT_PID;
                     break;
                 case (motor_intertia_test):
-                    state = SLOW_RAMP;
+                    Log("FSM", "Starting motor_intertia_test", LOG_LOW);
+
+                    // state = SLOW_RAMP;
+                    state = HARD_STOP;
                     break;
                 default:
                     state = ERROR;
@@ -155,13 +193,18 @@ void loop() {
             if (millis() - prev_ramp_time >= ramp_interval) {
                 prev_ramp_time = millis();
 
-                if (pwm1_dc == 100) {
+                if (pwm1_dc < 100) {
                     pwm1_dc = pwm1_dc + 1;
                     sprintf(MSG_BUFFER, "pwm1_dc == %d", pwm1_dc);
                     Log("FSM", MSG_BUFFER, LOG_MEDIUM);
 
                     // 20Khz - 10% DC
-                    PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, pwm1_dc);
+                    PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100 - pwm1_dc);
+                    PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100);
+
+                }
+                else {
+                    state = HARD_STOP;
                 }
             }
             break;
@@ -186,14 +229,84 @@ void loop() {
             break;
 
         case (HARD_STOP):
-            PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 0);
-            PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 0);
+            pwm1_dc = 0;
+            pwm2_dc = 0;
+            PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100-pwm1_dc);
+            PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100-pwm2_dc);
+
+            if (millis() - prev_log_time >= 10) {
+                prev_log_time = millis();
+                diff_pulseCount = pulseCount - prev_pulseCount;
+
+                speed = RAD_PER_PULSE*diff_pulseCount/10.0 * 1000;
+
+                sprintf(MSG_BUFFER, "speed(rad/s) == %0.5f", speed);
+                //sprintf(MSG_BUFFER, "pulseCount == %ld", pulseCount);
+                Log("FSM", MSG_BUFFER, LOG_MEDIUM);
+
+                prev_pulseCount = pulseCount;
+
+                // if (speed < 0.05) {
+                    // state = SLOW_RAMP;
+                // }
+            }
+
+            // display 
             break;
 
         case (SOFT_STOP):
             // Decrease PWM DC to 0%  -1% every 10ms. 
-            PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, pwm1_dc);
-            PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, pwm2_dc);
+            if (millis() - prev_ramp_time >= ramp_interval) {
+                prev_ramp_time = millis();
+
+                if (pwm1_dc > 0 && pwm2_dc > 0) {
+                    pwm1_dc = pwm1_dc - 1;
+                    pwm2_dc = pwm2_dc - 1;
+
+                    sprintf(MSG_BUFFER, "pwm1_dc == %d, pwm2_dc == %d", pwm1_dc, pwm2_dc);
+                    Log("FSM", MSG_BUFFER, LOG_MEDIUM);
+
+                    PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100 - pwm1_dc);
+                    PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100 - pwm2_dc);
+                }
+            }
+            break;
+            
+        case(MOVE_RIGHT_PID):
+            if (abs(error) < 0.01) state = MOVE_LEFT_PID;
+
+            if(millis() - prev_move_right_time >= control_interval){
+                prev_move_right_time = millis();
+
+                //Get initial error signal
+                error = wanted_absolute_angle_rad - measured_absolute_angle_rad;
+
+                //Calculate integral and different terms (converting control interval into seconds)
+                dError = (error - prev_error) / (control_interval*1e-3); 
+                error_sum+= error_sum*control_interval*1e-6;
+                output = PID_right.Kp*error + PID_right.Ki*error_sum + PID_right.Kd*dError;
+                prev_error = error;
+
+            }
+
+            break;
+        
+        case(MOVE_LEFT_PID):
+            if (abs(error) < 0.01) state = SLOW_RAMP;
+
+            if(millis() - prev_move_right_time >= control_interval){ 
+                prev_move_right_time = millis();
+
+                //Get initial error signal
+                error = wanted_absolute_angle_rad - measured_absolute_angle_rad;
+
+                //Calculate integral and different terms (converting control interval into seconds)
+                dError = (error - prev_error) / (control_interval*1e-6); 
+                error_sum+= error_sum*control_interval*1e-6;
+                output = PID_left.Kp*error + PID_left.Ki*error_sum + PID_left.Kd*dError;
+                prev_error = error;
+            }
+            
             break;
         case(ERROR):
             state = ERROR;
