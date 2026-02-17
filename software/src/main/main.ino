@@ -29,7 +29,8 @@ enum eLogLevel {
 char MSG_BUFFER[64]; // global message buffer for serial logging
 
 //creates pwm instance
-RP2040_PWM* PWM_Instance;
+RP2040_PWM* PWM1_Instance;
+RP2040_PWM* PWM2_Instance;
 
 // Motor control variables
 volatile long pulseCount = 0;
@@ -49,12 +50,12 @@ enum eFSM_STATE {
     TEST, 
     SOFT_STOP,
     HARD_STOP,
-    MOVE_CW_HOME,
-    MOVE_CCW_HOME,
-    CW_SOFT_RAMP,
-    CCW_SOFT_RAMP,
-    MOVE_CW_PID,
-    MOVE_CCW_PID,
+    MOVE_LEFT_HOME,
+    MOVE_RIGHT_HOME,
+    LEFT_SOFT_RAMP,
+    RIGHT_SOFT_RAMP,
+    MOVE_LEFT_PID,
+    MOVE_RIGHT_PID,
     SLOW_RAMP
 };
 
@@ -67,7 +68,7 @@ enum eTestCase {
 };
 
 eFSM_STATE state = IDLE;
-eTestCase  test_case = motor_intertia_test;
+eTestCase  test_case = spin_direction_home_test;
 
 // ------------------------ S E T U P    C O D E    B E G I N ------------------------
 
@@ -77,7 +78,7 @@ void setup() {
     pinMode(A2, INPUT); // ENCB_i
     pinMode(A3, OUTPUT); // PWM_o
     pinMode(4, INPUT); // prox_sens_i
-    pinMode(5, INPUT); // fault_detected_n
+    pinMode(5, OUTPUT); // fault_detected_n
     pinMode(6, OUTPUT); // PWM_dir_o
 
     // Count positive and negative edges encoder to achieve max 64CPR resolution
@@ -87,8 +88,10 @@ void setup() {
     attachInterrupt(digitalPinToInterrupt(A2), B_negedge, FALLING);
 
     // PWM setup w/ 0% DC
-    PWM_Instance = new RP2040_PWM(PWM_pin, PWM_FREQ, 0);
+    PWM1_Instance = new RP2040_PWM(PWM1_pin, PWM_FREQ, 0);
+    PWM2_Instance = new RP2040_PWM(PWM2_pin, PWM_FREQ, 0);
 
+    state = IDLE;
 }
 
 // ------------------------ M A I N    C O D E    B E G I N ------------------------
@@ -97,11 +100,18 @@ void setup() {
 void loop() {
 
     //Printing for encoder
-    static unsigned long lastLogTime = 0;
-    const unsigned long logInterval  = 500; // ms
+    static unsigned long prev_log_time = 0;
+    const static unsigned long log_interval  = 500; // ms
+
+    static unsigned long prev_ramp_time = 0;
+    const static unsigned long ramp_interval = 10; // ms
+
+    static unsigned long prev_move_time = 0;
+    const static unsigned long move_interval = 500; // ms
 
     double absolute_angle_rad;
-    uin8_t pwm_dc;    
+    uint8_t pwm1_dc;    
+    uint8_t pwm2_dc;    
 
     float kp = 0.003100008993921;
     float ki = 0.0000410086921359;
@@ -110,83 +120,112 @@ void loop() {
     // --------- FSM BEGIN ---------
     switch(state) {
         case(IDLE):
+            pwm1_dc = 0;
+            pwm2_dc = 0;
+
             if (TEST_MODE_ENABLED) {
-                pwm_dc = 0;
                 state = TEST;
+            } else {
+                state = IDLE;
             }
+
             break;
         case(TEST):
+            Log("FSM", "Starting Test...", LOG_LOW);
+
             switch (test_case) {
                 case (spin_direction_home_test):
-                    state = MOVE_CW_HOME;
+                    Log("FSM", "Starting spin_direction_home_test", LOG_LOW);
+                    state = MOVE_LEFT_HOME;
                     break;
                 case (soft_start_test):
-                    state = CW_SOFT_RAMP;
+                    state = LEFT_SOFT_RAMP;
                     break;
                 case (position_drift_test):
-                    state = MOVE_CW_PID;
+                    state = MOVE_LEFT_PID;
                     break;
                 case (motor_intertia_test):
                     state = SLOW_RAMP;
                     break;
+                default:
+                    state = ERROR;
             }
         case (SLOW_RAMP):
             // Increase PWM DC to 100% +1% every 10ms
-            PWM_Instance->setPWM(PWM_pin, PWM_FREQ, pwm_dc);
+            if (millis() - prev_ramp_time >= ramp_interval) {
+                prev_ramp_time = millis();
 
-            if (millis() - lastLogTime >= logInterval) {
-                lastLogTime = millis();
-                pwm_dc = pwm_dc - 1;
+                if (pwm1_dc == 100) {
+                    pwm1_dc = pwm1_dc + 1;
+                    sprintf(MSG_BUFFER, "pwm1_dc == %d", pwm1_dc);
+                    Log("FSM", MSG_BUFFER, LOG_MEDIUM);
 
-                sprintf(MSG_BUFFER, "pulseCount == %ld", pulseCount);
-                Log("ENCODER", MSG_BUFFER, LOG_MEDIUM);
-
-                // 20Khz - 10% DC
-                PWM_Instance->setPWM(PWM_pin, PWM_FREQ, 10);
-
+                    // 20Khz - 10% DC
+                    PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, pwm1_dc);
+                }
             }
+            break;
+        
+        case(MOVE_LEFT_HOME):
+            //Start PWM 1, set PWM 2 to 3.3V
+            PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100);
+            PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 80);
+            Log("FSM", "Moving left", LOG_MEDIUM);
 
+            delay(move_interval);
+            state = MOVE_RIGHT_HOME;
+            break;
+        case(MOVE_RIGHT_HOME):
+            //start PWM2, set PWM 1 to 3.3V
+            PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 80);
+            PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100);
+            Log("FSM", "Moving right", LOG_MEDIUM);
+
+            delay(move_interval);
+            state = MOVE_LEFT_HOME;
+            break;
 
         case (HARD_STOP):
-            PWM_Instance->setPWM(PWM_pin, PWM_FREQ, 0);
+            PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 0);
+            PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 0);
+            break;
 
         case (SOFT_STOP):
             // Decrease PWM DC to 0%  -1% every 10ms. 
-            PWM_Instance->setPWM(PWM_pin, PWM_FREQ, pwm_dc);
-
+            PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, pwm1_dc);
+            PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, pwm2_dc);
+            break;
         case(ERROR):
             state = ERROR;
+            break;
         default:
             Log ("FSM", "Unhandled State!", LOG_NONE);
             state = ERROR;
     }
 
-    if (millis() - lastLogTime >= logInterval) {
-        lastLogTime = millis();
+    // if (millis() - prev_log_time >= log_interval) {
+    //     prev_log_time = millis();
 
-        noInterrupts();
-        sprintf(MSG_BUFFER, "pulseCount == %ld", pulseCount);
-        Log("ENCODER", MSG_BUFFER, LOG_MEDIUM);
+    //     noInterrupts();
+    //     sprintf(MSG_BUFFER, "pulseCount == %ld", pulseCount);
+    //     Log("ENCODER", MSG_BUFFER, LOG_MEDIUM);
 
-        // 20Khz - 10% DC
-        PWM_Instance->setPWM(PWM_pin, PWM_FREQ, 10);
-
-        interrupts();
-    }
+    //     interrupts();
+    // }
   
     /*
 
     <ACTION, SOLENOID_OR_POSITION, START_TIME, END_TIME >
         
-    ACTION (uint_8)
+    ACTION (uint8_t)
     RIGHT_MOVE
     RIGHT_PLAY
     LEFT_PLAY
         
-    SOLENOID_OR_POSITION (uint_16)
+    SOLENOID_OR_POSITION (uint16_t)
     SOLENOID 
     If ACTION is a PLAY command then decode the individual bits to specify if a solenoid is on or off. 
-    Using uint_16 allows this to work for up to 16 solenoids per hand
+    Using uint16_t allows this to work for up to 16 solenoids per hand
 
     POSITION
     If ACTION is a MOVE command then change the setpoint. 

@@ -1,8 +1,9 @@
 Pin	Variable_name	Direction
-A0	current_sense_i	INPUT
-A1	ENCA_i	INPUT
-A2	ENCB_i	INPUT
-A3	PWM_o	OUTPUT
-4	prox_sens_i	INPUT
-5	fault_detected_n	INPUT
-6	PWM_dir_o	OUTPUT
+A0	current_sense1	INPUT
+A1	current_sense2	INPUT
+A2	prox_sense1	INPUT
+A3	prox_sense2	INPUT
+D24	ENCA	INPUT
+D25	ENCB	INPUT
+D6	PWM1	OUTPUT
+D5	PWM2	OUTPUT

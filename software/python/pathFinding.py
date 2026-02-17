@@ -184,6 +184,8 @@ def find_best_time_path(notes):
     # LAYER 2 (2nd move)
     # The error accumulates.
     { 55.0: 0.15, 65.0: 0.05 } 
+    
+    ....        
 ]
 
     """
