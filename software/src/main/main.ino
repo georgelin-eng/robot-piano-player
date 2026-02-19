@@ -354,10 +354,10 @@ void loop() {
 
 
                 sprintf(MSG_BUFFER, "wanted = %0.5f, measured=%0.5f", wanted_absolute_angle_rad, measured_absolute_angle_rad);
-                Log("MOVE_LEFT_PID", MSG_BUFFER, LOG_MEDIUM);
+                Log("MOVE_LEFT_PID(1)", MSG_BUFFER, LOG_MEDIUM);
 
                 sprintf(MSG_BUFFER, "output = %d, error=%0.5f, error_sum=%0.5f, dError=%0.5f", (int) output*100, error, error_sum, dError);
-                Log("MOVE_LEFT_PID", MSG_BUFFER, LOG_MEDIUM);
+                Log("MOVE_LEFT_PID(2)", MSG_BUFFER, LOG_MEDIUM);
             }
             
             break;

@@ -6,7 +6,7 @@ DC      = 0.5;  % Duty cycle
 WnRes   = 2;    % Frequency search res
 ZetaRes = 0.05; % Damping factor search res
 TargPM  = 60;   % Target phase margin [degrees]
-Vmotor  = 24;   % DC voltage of motor
+Vmotor  = 12;   % DC voltage of motor
 
 IGNORE_TIMING_BELT = true;
 
