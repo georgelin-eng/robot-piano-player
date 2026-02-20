@@ -11,7 +11,7 @@ L = 537 * 1e-3;             % Length of pulling belt [m]
 L1 = L/2;
 L2 = L/4;
 
-Dpulley = 19.4;                       % Diameter of pulley (mm)
+Dpulley = 17.4;                     % Diameter of pulley (mm)
 Rpulley = Dpulley/2 * 1e-3;         % Radius of pulley (m)
 Kbelt = RR(Y*A/L1, Y*A/L2);         % Spring constant of belt in middle
 Bp = 1e-4;                          % Damping of belt with pulley (guess)
@@ -41,5 +41,6 @@ Mplatform = 448.03202;
 SAFTEY_FACTOR = 1.0;
 
 % Mhand_grams = Msolenoid * 9 + Mplatform + M_SBR12UU * 2;
-Mhand_grams = Mplatform + M_SBR12UU * 2;
+% Mhand_grams = Mplatform + M_SBR12UU * 2;
+Mhand_grams = 435;
 Mhand = Mhand_grams * 1e-3;

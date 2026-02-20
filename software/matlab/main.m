@@ -68,7 +68,7 @@ Kd = K_out.Kd;
 
 % ENCODER PARAMETERS
 ramp_time = 0.1;
-yd = 0.02;
+yd = 0.0922*2;
 CPR = 14; % counts per revolution
 encoder_freq = 20 * 1e3;
 T_encoder = 1/encoder_freq;
@@ -77,4 +77,5 @@ t = 0:1e-3:2;
 u = soft_step(yd, ramp_time, t);
 simin = timeseries(u, t);
 
-% simulink_parse;
+out = sim('simulink_model');
+simulink_parse;

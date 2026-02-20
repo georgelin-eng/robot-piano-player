@@ -59,3 +59,6 @@ tau_CLTF = iw_CLTF * Km;
 PWM_CLTF = CLTF / Gp / Ga;
 
 [Tr, Tp, Ts, OSu] = RCG_from_CLTF(CLTF);
+
+
+% Z = roots([1, (Ki-Kp*p)/(Kp-Kd*p), Ki*p/(Kp-Kd*p)]);
