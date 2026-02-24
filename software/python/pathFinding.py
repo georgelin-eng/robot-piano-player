@@ -224,12 +224,16 @@ def find_best_time_path(notes):
                 dist_cm = abs(curr_pos - prev_pos)
                 required_time = get_travel_time(dist_cm)
                 
-                # COST = LATENESS (Time Error)
-                # If we are faster than the music, error is 0.
-                # If we are slower, error is the delay in seconds.
-                # kinda assuming stacatto on everything but I think thats fine.
-                error = max(0.0, required_time - available_time)
-                total_new_error = prev_acc_error + error
+                #this says how long we can sustain
+                lost_sustain_cost = required_time
+                
+                #How many seconds late are we - >
+                lateness = max(0.0, required_time- available_time)
+                
+                punishement_cost = lateness*10
+                
+                step_error= lost_sustain_cost + punishement_cost
+                total_new_error = prev_acc_error + step_error
                 
                 #Find lowest time error way to end up in position x (cm)
                 if total_new_error < min_error:
@@ -324,85 +328,106 @@ def print_finger_assignments(times, path_cm, notes):
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import collections
+
 VISUAL_WHITE_KEY_WIDTH = 2.0
 VISUAL_BLACK_KEY_WIDTH = 1.2
 PIANO_HEADER_HEIGHT = 0.5
 
 
-#PLOTTING AHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH
+# --- PLOTTING ---
 def plot_precise_movement_schedule(notes, times, hand_path_cm, robot_config):
     """
     Visualizes the EXACT moment the robot must leave one note to catch the next.
     Splits the path into 'Hold' phases and 'Move' phases.
+    Tracks the main carriage center for a clean, readable motor schedule.
     """
+    if not times:
+        print("No path data to plot.")
+        return
+
     fig, ax = plt.subplots(figsize=(16, 12))
     ax.invert_yaxis()
-    
-    # Setup Axis
-    # Add headroom for the header
-    ax.set_ylim(max(times)+0.5, -0.8) 
-    ax.set_ylabel("Time (seconds)", fontsize=12)
-    ax.set_xlabel("Rail Position (cm)", fontsize=12)
-    ax.set_title("Motor Schedule: Hold Time vs. Travel Time", fontsize=14)
-    
-    # --- 1. DRAW PIANO HEADER ---
-    draw_piano_header(ax, 0, 0.5)
     
     # Offset visualization so it doesn't overlap the header
     TIME_OFFSET = 0.5 
     
-    # --- 2. CALCULATE & DRAW TRAJECTORIES ---
-    # We loop through the path to calculate 'Departure Times'
+    # Setup Axis
+    # 1.5 seconds of extra padding to the bottom so the final note isn't cut off
+    max_time = max(times)
+    ax.set_ylim(max_time + TIME_OFFSET + 1.5, -0.8) 
     
+    ax.set_ylabel("Time (seconds)", fontsize=12)
+    ax.set_xlabel("Rail Position (cm)", fontsize=12)
+    ax.set_title("Motor Schedule: Center of Hand Movement", fontsize=14)
+    
+    # --- 1. DRAW PIANO HEADER ---
+    draw_piano_header(ax, 0, PIANO_HEADER_HEIGHT)
+    
+    # Track labels so we don't clutter the legend
+    added_labels = set()
+    def get_label(name):
+        if name not in added_labels:
+            added_labels.add(name)
+            return name
+        return ""
+
+    # --- 2. CALCULATE & DRAW TRAJECTORIES ---
     for i in range(len(times) - 1):
-        # Current State
         curr_time = times[i] + TIME_OFFSET
         curr_pos = hand_path_cm[i]
         
-        # Target State
         next_time = times[i+1] + TIME_OFFSET
         next_pos = hand_path_cm[i+1]
         
-        # Physics Calculation
         dist = abs(next_pos - curr_pos)
         travel_duration = get_travel_time(dist)
         
-        # THE CRITICAL VALUE: When must we leave?
-        departure_time = next_time - travel_duration
+        ideal_departure = next_time - travel_duration
         
-        # Check if we are late (Departure is before we even arrived at current?)
-        # (This happens if the optimizer was forced to pick an impossible path)
-        is_impossible = departure_time < curr_time
-        
-        # --- PLOT SEGMENT 1: THE HOLD (Sustain) ---
-        # From arrival at current note -> Departure time
-        # If impossible, we effectively have 0 hold time.
-        hold_end_time = max(curr_time, departure_time)
-        
-        ax.plot([curr_pos, curr_pos], [curr_time, hold_end_time], 
-                color='black', linewidth=3, solid_capstyle='round', 
-                label='Hold Position' if i==0 else "")
-        
-        # --- PLOT SEGMENT 2: THE MOVE (Travel) ---
-        # From Departure Time -> Arrival at Next Note
-        if dist > 0:
-            move_color = 'red' if is_impossible else '#00aa00' # Red if late, Green if good
-            style = ':' 
-            
-            # Draw the travel line
-            ax.plot([curr_pos, next_pos], [hold_end_time, next_time], 
-                    color=move_color, linestyle=style, linewidth=2,
-                    label='Moving' if i==0 else "")
-            
-            # MARK THE DEPARTURE POINT
-            # This is the specific visual cue you asked for
-            marker_style = 'x' if is_impossible else 'v' # 'v' is an arrow pointing down
-            ax.scatter([curr_pos], [hold_end_time], 
-                       color='red', marker=marker_style, s=80, zorder=10,
-                       label='Departure Trigger' if i==0 else "")
+        # --- THE REALITY CHECK ---
+        if ideal_departure < curr_time:
+            actual_departure = curr_time
+            actual_arrival = curr_time + travel_duration
+            is_late = True
+        else:
+            actual_departure = ideal_departure
+            actual_arrival = next_time 
+            is_late = False
 
-    # --- 3. DRAW NOTES & FINGERS (Background Context) ---
-    # We draw these slightly faded so the motor path pops out
+        # --- PLOT MAIN CARRIAGE (Center Anchor) ---
+        # Segment 1: The Hold
+        ax.plot([curr_pos, curr_pos], [curr_time, actual_departure], 
+                color='black', linewidth=4, solid_capstyle='round', 
+                label=get_label('Carriage Center (Sustain)'))
+        
+        # Segment 2: The Move
+        if dist > 0:
+            move_color = 'red' if is_late else '#00aa00'
+            style = '--' if is_late else ':'
+            
+            ax.plot([curr_pos, next_pos], [actual_departure, actual_arrival], 
+                    color=move_color, linestyle=style, linewidth=2,
+                    label=get_label('Travel (Late)' if is_late else 'Travel (On Time)'))
+            
+            marker_style = 'x' if is_late else 'v' 
+            ax.scatter([curr_pos], [actual_departure], 
+                       color='darkorange' if not is_late else 'red', 
+                       marker=marker_style, s=80, zorder=10,
+                       label=get_label('Departure Trigger'))
+
+            if is_late:
+                 ax.scatter([next_pos], [actual_arrival], color='red', marker='o', s=40, zorder=10)
+
+    # --- ADD THE FINAL NOTE HOLD ---
+    if len(times) > 0:
+        last_time = times[-1] + TIME_OFFSET
+        last_pos = hand_path_cm[-1]
+        
+        # Final Carriage Hold
+        ax.plot([last_pos, last_pos], [last_time, last_time + 0.5], 
+                color='black', linewidth=4, solid_capstyle='round')
+
+    # --- 3. DRAW NOTES & FINGER HITS (Background Context) ---
     for i, t in enumerate(times):
         c_pos = hand_path_cm[i]
         visual_t = t + TIME_OFFSET
@@ -414,7 +439,6 @@ def plot_precise_movement_schedule(notes, times, hand_path_cm, robot_config):
             is_black = is_black_key(note.pitch)
             duration = max(0.1, note.end - note.start)
             
-            # Draw Note Box (Faded)
             width = VISUAL_BLACK_KEY_WIDTH if is_black else VISUAL_WHITE_KEY_WIDTH
             rect = patches.Rectangle(
                 (note_pos - width/2, visual_t), width, duration, 
@@ -423,7 +447,6 @@ def plot_precise_movement_schedule(notes, times, hand_path_cm, robot_config):
             )
             ax.add_patch(rect)
             
-            # Find active finger
             hit_finger_idx = None
             for f_idx, finger in enumerate(robot_config):
                 if (is_black and finger['type'] == 'w') or (not is_black and finger['type'] == 'b'): continue
@@ -432,57 +455,47 @@ def plot_precise_movement_schedule(notes, times, hand_path_cm, robot_config):
                     break
             
             if hit_finger_idx is not None:
-                # Draw simple connection line
                 f_offset = robot_config[hit_finger_idx]['offset']
                 ax.plot([c_pos + f_offset, note_pos], [visual_t, visual_t], 
                         color='blue', alpha=0.3, linewidth=1)
                 ax.scatter([c_pos + f_offset], [visual_t], color='blue', s=10, alpha=0.5)
 
     ax.grid(True, axis='y', alpha=0.3)
-    ax.legend(loc='upper right')
+    
+    # --- LEGEND UPDATES ---
+    # Moved to lower left, increased font size, added a slight background frame for readability over grid lines
+    ax.legend(loc='lower left', fontsize=14, framealpha=0.9, edgecolor='#ccc')
+    
     plt.tight_layout()
     plt.show()
     
+
 def draw_piano_header(ax, y_pos, height):
     """Draws a realistic piano keyboard along the X-axis at a specific Y-position."""
-    # We iterate through a wide range of MIDI notes to cover the rail
-    # Assuming rail covers roughly MIDI 21 (A0) to 108 (C8)
     min_midi = 21
-    max_midi = 108
+    max_midi = 71
     
-    VISUAL_WHITE_KEY_WIDTH = 2.0  
-    VISUAL_BLACK_KEY_WIDTH = 1.2 
-    
-    # 1. Draw WHITE KEYS first (background layer)
     for pitch in range(min_midi, max_midi + 1):
         if not is_black_key(pitch):
             pos_cm = get_note_position_cm(pitch)
-            
-            # Draw white rectangle centered on the position
             rect = patches.Rectangle(
-                (pos_cm - VISUAL_WHITE_KEY_WIDTH/2, y_pos), # (x,y) bottom-left corner
-                VISUAL_WHITE_KEY_WIDTH, # width
-                height,                 # height
+                (pos_cm - VISUAL_WHITE_KEY_WIDTH/2, y_pos), 
+                VISUAL_WHITE_KEY_WIDTH, height,                 
                 linewidth=1, edgecolor='black', facecolor='white', zorder=1
             )
             ax.add_patch(rect)
             
-            # Label C notes for orientation
             if (pitch % 12) == 0:
                 ax.text(pos_cm, y_pos - height*0.2, f"C{(pitch//12)-1}", 
                         ha='center', va='top', fontsize=8, color='blue', zorder=3)
 
-    # 2. Draw BLACK KEYS second (foreground layer)
     for pitch in range(min_midi, max_midi + 1):
         if is_black_key(pitch):
             pos_cm = get_note_position_cm(pitch)
-            
-            # Black keys are shorter and narrower
             black_height = height * 0.65
             rect = patches.Rectangle(
                 (pos_cm - VISUAL_BLACK_KEY_WIDTH/2, y_pos),
-                VISUAL_BLACK_KEY_WIDTH,
-                black_height,
+                VISUAL_BLACK_KEY_WIDTH, black_height,
                 linewidth=1, edgecolor='black', facecolor='black', zorder=2
             )
             ax.add_patch(rect)

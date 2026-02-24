@@ -1,4 +1,4 @@
-// #define DRV8263H
+#define DRV8263H
 
 #include <stdio.h>       // Standard IO
 #include "RP2040_PWM.h"  // PWM
@@ -274,7 +274,8 @@ void loop() {
             break;
             
         case(MOVE_RIGHT_PID):
-            wanted_absolute_angle_rad = 0.050 * KTJ;
+            wanted_absolute_angle_rad = 0.15 * KTJ;
+            wanted_absolute_angle_rad = 420;
 
             if (first_entry == 0)  {
                 error = wanted_absolute_angle_rad - measured_absolute_angle_rad;
@@ -312,6 +313,9 @@ void loop() {
                     error_sum = 0;
                     prev_error = 0;
                     first_entry = 0;
+                    set_left_PWM((int) abs(0*100));
+                    set_right_PWM((int) (0*100));
+                    delay(1000);
                 }
 
                 sprintf(MSG_BUFFER, "wanted = %0.5f, measured=%0.5f, pulseCount=%ld", wanted_absolute_angle_rad, measured_absolute_angle_rad, pulseCount);
@@ -324,8 +328,9 @@ void loop() {
             break;
         
         case(MOVE_LEFT_PID):
-            wanted_absolute_angle_rad = -0.050 * KTJ;
-
+            // wanted_absolute_angle_rad = -0.15 * KTJ;
+            wanted_absolute_angle_rad = 110;
+    
             if (first_entry == 0){
                 error = wanted_absolute_angle_rad - measured_absolute_angle_rad;
                 first_entry = 1;
@@ -367,6 +372,9 @@ void loop() {
                     prev_error = 0;
                     error_sum = 0;
                     first_entry = 0;
+                    set_left_PWM((int) abs(0*100));
+                    set_right_PWM((int) (0*100));
+                    delay(1000);
                 } 
 
                 sprintf(MSG_BUFFER, "wanted = %0.5f, measured=%0.5f, pulseCount=%ld", wanted_absolute_angle_rad, measured_absolute_angle_rad, pulseCount);
@@ -501,7 +509,7 @@ void loop() {
 void set_left_PWM(int pwm_dc) {
     #ifdef DRV8263H 
         PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, pwm_dc);
-        PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100);
+        PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 0);
     #else
         PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100);
         PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100 - pwm_dc);
@@ -510,8 +518,8 @@ void set_left_PWM(int pwm_dc) {
 
 void set_right_PWM(int pwm_dc) {
     #ifdef DRV8263H 
-        PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, pwm_dc);
-        PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 0);
+        PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 0);
+        PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, pwm_dc);
     #else
         PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100 - pwm_dc);
         PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100);
