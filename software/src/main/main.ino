@@ -1,4 +1,4 @@
-#define DRV8263H
+// #define DRV8263H
 
 #include <stdio.h>       // Standard IO
 #include "RP2040_PWM.h"  // PWM
@@ -74,7 +74,7 @@ enum eTestCase {
 };
 
 eFSM_STATE state = IDLE;
-eTestCase  test_case = position_drift_test;
+eTestCase  test_case = spin_direction_home_test;
 
 struct K_PID {
     float Kp;
@@ -86,8 +86,8 @@ struct K_PID {
 
 void setup() {
     pinMode(A0, INPUT); // current_sense_i
-    pinMode(A1, INPUT); // ENCA_i
-    pinMode(A2, INPUT); // ENCB_i
+    pinMode(24, INPUT); // ENCA_i
+    pinMode(25, INPUT); // ENCB_i
     pinMode(A3, OUTPUT); // PWM_o
     pinMode(4, INPUT); // prox_sens_i
     pinMode(5, OUTPUT); // fault_detected_n
@@ -219,7 +219,6 @@ void loop() {
             //Start PWM 1, set PWM 2 to 3.3V
             set_left_PWM(20);
             Log("FSM", "Moving left", LOG_MEDIUM);
-
             delay(move_interval);
             state = MOVE_RIGHT_HOME;
             break;
@@ -507,6 +506,8 @@ void loop() {
     For simplicity the opposite side is completely turned off via setting PWM to 100
 */
 void set_left_PWM(int pwm_dc) {
+    sprintf(MSG_BUFFER, "Left PWM = %d", pwm_dc);
+    Log("LEFT VAL", MSG_BUFFER, LOG_MEDIUM);
     #ifdef DRV8263H 
         PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, pwm_dc);
         PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 0);
@@ -517,6 +518,8 @@ void set_left_PWM(int pwm_dc) {
 }
 
 void set_right_PWM(int pwm_dc) {
+    sprintf(MSG_BUFFER, "Right PWM = %d", pwm_dc);
+    Log("RIGHT VAL", MSG_BUFFER, LOG_MEDIUM);
     #ifdef DRV8263H 
         PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 0);
         PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, pwm_dc);

@@ -17,11 +17,15 @@
 #define LCD_D5 11
 #define LCD_D6 10
 #define LCD_D7 9
+#define CURRENT_S1 26   // A0 current sense 1
+#define CURRENT_S2 27   //  A1 current sense 2
+
 
 #define I2C_SCAN_MODE 0 // scans for I2C devices - should get one at 0x20 and one at 0x21 with both boards
 #define SOL_TEST_MODE 1 // tests solenoid function - S1 controls sol 1, S2 controls sol 13 (on moving board)
 #define PROX_TEST_MODE 2 // tests proximity sensor
 #define MOTOR_TEST_MODE 3 // tests motor - left and right every MOTOR_DELAY ms
+#define CURRENT_SENSE_MODE 4 // test motor and print value of the current sense on the screen
 
 #define MOVE_BOARD 1 // 1 if connected
 #define PWM_FREQ 20000 // 20KHz
@@ -40,9 +44,14 @@ int prev_button_1 = -1;
 int prev_button_2 = -1;
 int prox_val;
 int prev_prox_val = -1;
+int sense_val1 = -1;
+int sense_val2 = -1;
+int prev_sval1 = -1;
+int prev_sval2 = -1;
+
 char output[16];
 
-int mode = MOTOR_TEST_MODE; // set mode here
+int mode = CURRENT_SENSE_MODE; // set mode here
 
 void setup() {
   delay(5000);
@@ -107,6 +116,17 @@ void setup() {
     PWM2_Instance = new RP2040_PWM(MOTOR_B, PWM_FREQ, 0);
   }
 
+  else if (mode == CURRENT_SENSE_MODE) {
+    Serial.print("\r\nMotor Test\r\n");
+
+    pinMode(MOTOR_A, OUTPUT);
+    pinMode(MOTOR_B, OUTPUT);
+
+    PWM1_Instance = new RP2040_PWM(MOTOR_A, PWM_FREQ, 0);
+    PWM2_Instance = new RP2040_PWM(MOTOR_B, PWM_FREQ, 0);
+  }
+
+
 }
 
 void loop() {
@@ -153,6 +173,75 @@ void loop() {
     lcd.writeData(output);
 
     delay(MOTOR_DELAY);
+
+    set_right_PWM(20);
+    Serial.print("Moving Right\r\n");
+
+    sprintf(output, "moving right");
+    lcd.setDataAddr(LCD_Line2Start);
+    lcd.writeData(output);
+
+    delay(MOTOR_DELAY);
+  }
+
+  if (mode == CURRENT_SENSE_MODE) {
+
+    sense_val1 = digitalRead(CURRENT_S1);
+    sense_val2 = digitalRead(CURRENT_S2);
+
+    if (sense_val1 != prev_sval1 || sense_val2 != prev_sval2) {
+
+      sprintf(output, "CS 1:%d CS 2:%d", sense_val1, sense_val2);
+      
+      lcd.setDataAddr(LCD_Line2Start);
+      lcd.writeData(output);
+
+      prev_sval1 = button_1_val;
+      prev_sval2 = button_2_val;
+    }
+
+    set_left_PWM(20);
+    Serial.print("Moving Left\r\n");
+
+    if (sense_val1 != prev_sval1 || sense_val2 != prev_sval2) {
+
+      sprintf(output, "CS 1:%d CS 2:%d", sense_val1, sense_val2);
+      
+      lcd.setDataAddr(LCD_Line2Start);
+      lcd.writeData(output);
+
+      prev_sval1 = button_1_val;
+      prev_sval2 = button_2_val;
+    }
+    
+    sprintf(output, "moving left");
+    lcd.setDataAddr(LCD_Line2Start);
+    lcd.writeData(output);
+
+    if (sense_val1 != prev_sval1 || sense_val2 != prev_sval2) {
+
+      sprintf(output, "CS 1:%d CS 2:%d", sense_val1, sense_val2);
+      
+      lcd.setDataAddr(LCD_Line2Start);
+      lcd.writeData(output);
+
+      prev_sval1 = button_1_val;
+      prev_sval2 = button_2_val;
+    }
+
+    delay(MOTOR_DELAY);
+
+    if (sense_val1 != prev_sval1 || sense_val2 != prev_sval2) {
+
+      sprintf(output, "CS 1:%d CS 2:%d", sense_val1, sense_val2);
+      
+      lcd.setDataAddr(LCD_Line2Start);
+      lcd.writeData(output);
+
+      prev_sval1 = button_1_val;
+      prev_sval2 = button_2_val;
+
+    }
 
     set_right_PWM(20);
     Serial.print("Moving Right\r\n");
