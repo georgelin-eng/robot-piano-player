@@ -8,6 +8,7 @@
 #define OUT_PIN 0     // MCP23XXX pin 
 #define BUTTON_1_PIN 14 // Pin S1 (SCK)
 #define BUTTON_2_PIN 15 // Pin S2 (MOSI)
+#define BUTTON_3_PIN 8 // Pin S3 (MISO)
 #define PROX_PIN 28
 #define MOTOR_A 5  // PWM pin
 #define MOTOR_B 6  // PWM pin
@@ -40,6 +41,7 @@ RP2040_PWM* PWM2_Instance;
 
 int button_1_val = -1; 
 int button_2_val = -1; 
+int button_3_val = -1;
 int prev_button_1 = -1;
 int prev_button_2 = -1;
 int prox_val;
@@ -51,7 +53,23 @@ int prev_sval2 = -1;
 
 char output[16];
 
-int mode = CURRENT_SENSE_MODE; // set mode here
+int mode = MOTOR_TEST_MODE; // set mode here
+
+// Non-blocking timer variables
+unsigned long motor_last_change = 0;
+bool motor_going_left = true;
+unsigned long current_time = 0;
+
+char* get_mode_name(int m) {
+  switch(m) {
+    case 0: return "Mode: I2C Scan";
+    case 1: return "Mode: Sol Test";
+    case 2: return "Mode: Prox Test";
+    case 3: return "Mode: Motor Test";
+    case 4: return "Mode: Curr Sense";
+    default: return "Mode: Unknown";
+  }
+}
 
 void setup() {
   delay(5000);
@@ -61,6 +79,10 @@ void setup() {
   lcd.displaySwitch(true, true, false);
   lcd.inputSet(true, false);
   lcd.clear();
+
+  pinMode(BUTTON_3_PIN, INPUT);
+
+  Serial.print("\r\nELEC 391 G1 Demo\r\n");
 
   sprintf(output, "ELEC 391 G1 Demo");
   lcd.writeData(output);
@@ -72,64 +94,63 @@ void setup() {
     scanner.Scan();
   }
 
-  else if (mode == SOL_TEST_MODE) {
-    Serial.print("\r\nMCP23017 Blink Test\r\n");
-
+  else {
     if (!mcp_main.begin_I2C(32)) {
       Serial.print("Error on main board\r\n");
       while (1);
     }
     Serial.print("Found main board\r\n");
-
-    // configure pins
-    mcp_main.pinMode(OUT_PIN, OUTPUT);
-    pinMode(BUTTON_1_PIN, INPUT);
-
     if (MOVE_BOARD) {
       if (!mcp_move.begin_I2C(33)) {
         Serial.print("Error on moving board\r\n");
         while (1);
       }
       Serial.print("Found moving board\r\n");
-
-      // configure pins
-      mcp_move.pinMode(OUT_PIN, OUTPUT);
-      pinMode(BUTTON_2_PIN, INPUT);
     }
 
-    Serial.print("Starting test \r\n");
-  }
-
-  else if (mode == PROX_TEST_MODE) {
-    Serial.print("\r\nProximity Test\r\n");
-
+    // configure pins
+    mcp_main.pinMode(OUT_PIN, OUTPUT);
+    mcp_move.pinMode(OUT_PIN, OUTPUT);
+    pinMode(BUTTON_1_PIN, INPUT);
+    pinMode(BUTTON_2_PIN, INPUT);
     pinMode(PROX_PIN, INPUT);
-  }
-
-  else if (mode == MOTOR_TEST_MODE) {
-    Serial.print("\r\nMotor Test\r\n");
-
     pinMode(MOTOR_A, OUTPUT);
     pinMode(MOTOR_B, OUTPUT);
 
-    PWM1_Instance = new RP2040_PWM(MOTOR_A, PWM_FREQ, 0);
-    PWM2_Instance = new RP2040_PWM(MOTOR_B, PWM_FREQ, 0);
-  }
-
-  else if (mode == CURRENT_SENSE_MODE) {
-    Serial.print("\r\nMotor Test\r\n");
-
-    pinMode(MOTOR_A, OUTPUT);
-    pinMode(MOTOR_B, OUTPUT);
+    Serial.print("Configured pins\r\n");
 
     PWM1_Instance = new RP2040_PWM(MOTOR_A, PWM_FREQ, 0);
+    Serial.print("Configured PWM1\r\n");
+
     PWM2_Instance = new RP2040_PWM(MOTOR_B, PWM_FREQ, 0);
+    Serial.print("Configured PWM2\r\n");
   }
 
-
+  delay(2000);
+  lcd.clear();
+  lcd.writeData(get_mode_name(mode));
+  Serial.print("Starting loop\r\n");
 }
 
 void loop() {
+  button_3_val = digitalRead(BUTTON_3_PIN);
+  if (button_3_val == LOW) {
+    mode = (mode + 1) % 5; // cycle through modes
+    lcd.clear();
+    lcd.writeData(get_mode_name(mode));
+
+    prev_button_1 = -1; // reset previous values to force update on screen
+    prev_button_2 = -1;
+    prev_prox_val = -1;
+    prev_sval1 = -1;
+    prev_sval2 = -1;
+
+    set_left_PWM(0); // stop motor when changing modes
+    set_right_PWM(0);
+    
+    delay(500); // debounce delay
+  }
+
   if (mode == SOL_TEST_MODE) {
     button_1_val = digitalRead(BUTTON_1_PIN);
     mcp_main.digitalWrite(OUT_PIN, !button_1_val);
@@ -153,7 +174,6 @@ void loop() {
     prox_val = digitalRead(PROX_PIN);
 
     if (prox_val != prev_prox_val) {
-      //sprintf(output, "Prox val: %d", !prox_val);
       if (prox_val) sprintf(output, "No prox");
       else sprintf(output, "Prox!!!");
 
@@ -165,92 +185,45 @@ void loop() {
   }
 
   if (mode == MOTOR_TEST_MODE) {
-    set_left_PWM(20);
-    Serial.print("Moving Left\r\n");
+    current_time = millis();
     
-    sprintf(output, "moving left");
+    // Change motor direction every MOTOR_DELAY ms
+    if (current_time - motor_last_change >= MOTOR_DELAY) {
+      motor_going_left = !motor_going_left;
+      motor_last_change = current_time;
+    }
+    
+    if (motor_going_left) {
+      set_left_PWM(20);
+      sprintf(output, "moving left ");
+    } else {
+      set_right_PWM(20);
+      sprintf(output, "moving right");
+    }
+    
     lcd.setDataAddr(LCD_Line2Start);
     lcd.writeData(output);
-
-    delay(MOTOR_DELAY);
-
-    set_right_PWM(20);
-    Serial.print("Moving Right\r\n");
-
-    sprintf(output, "moving right");
-    lcd.setDataAddr(LCD_Line2Start);
-    lcd.writeData(output);
-
-    delay(MOTOR_DELAY);
   }
 
   if (mode == CURRENT_SENSE_MODE) {
-
-    sense_val1 = digitalRead(CURRENT_S1);
-    sense_val2 = digitalRead(CURRENT_S2);
-
-    if (sense_val1 != prev_sval1 || sense_val2 != prev_sval2) {
-
-      sprintf(output, "CS 1:%d CS 2:%d", sense_val1, sense_val2);
-      
-      lcd.setDataAddr(LCD_Line2Start);
-      lcd.writeData(output);
-
-      prev_sval1 = button_1_val;
-      prev_sval2 = button_2_val;
-    }
-
+    // Run motor continuously while sensing
     set_left_PWM(20);
-    Serial.print("Moving Left\r\n");
-
-    if (sense_val1 != prev_sval1 || sense_val2 != prev_sval2) {
-
-      sprintf(output, "CS 1:%d CS 2:%d", sense_val1, sense_val2);
-      
-      lcd.setDataAddr(LCD_Line2Start);
-      lcd.writeData(output);
-
-      prev_sval1 = button_1_val;
-      prev_sval2 = button_2_val;
-    }
     
-    sprintf(output, "moving left");
-    lcd.setDataAddr(LCD_Line2Start);
-    lcd.writeData(output);
+    sense_val1 = analogRead(CURRENT_S1);
+    sense_val2 = analogRead(CURRENT_S2);
 
     if (sense_val1 != prev_sval1 || sense_val2 != prev_sval2) {
-
-      sprintf(output, "CS 1:%d CS 2:%d", sense_val1, sense_val2);
+      // Convert ADC values to voltage (12-bit ADC, 3.3V reference)
+      float volt1 = (sense_val1 / 4095.0) * 3.3;
+      float volt2 = (sense_val2 / 4095.0) * 3.3;
       
+      sprintf(output, "S1:%.2fV S2:%.2fV", volt1, volt2);
       lcd.setDataAddr(LCD_Line2Start);
       lcd.writeData(output);
 
-      prev_sval1 = button_1_val;
-      prev_sval2 = button_2_val;
+      prev_sval1 = sense_val1;
+      prev_sval2 = sense_val2;
     }
-
-    delay(MOTOR_DELAY);
-
-    if (sense_val1 != prev_sval1 || sense_val2 != prev_sval2) {
-
-      sprintf(output, "CS 1:%d CS 2:%d", sense_val1, sense_val2);
-      
-      lcd.setDataAddr(LCD_Line2Start);
-      lcd.writeData(output);
-
-      prev_sval1 = button_1_val;
-      prev_sval2 = button_2_val;
-
-    }
-
-    set_right_PWM(20);
-    Serial.print("Moving Right\r\n");
-
-    sprintf(output, "moving right");
-    lcd.setDataAddr(LCD_Line2Start);
-    lcd.writeData(output);
-
-    delay(MOTOR_DELAY);
   }
 }
 
