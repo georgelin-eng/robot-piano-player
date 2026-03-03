@@ -16,3 +16,8 @@ figure;
 data = out.iw.Data;
 time = out.iw.Time;
 plot(time, data);
+
+figure;
+data = out.PWM.Data;
+time = out.PWM.Time;
+plot(time, data);
