@@ -22,7 +22,7 @@
 #define PID_KP 0.0746
 #define PID_KI 0.0033
 #define PID_KD 0.0044
-#define PID_KAW 0.01
+#define PID_KAW 0.01 // Anti-integral windup gain (WIP)
 #define PID_BETA 0.2759
 #define PID_LIM_MIN -1.0
 #define PID_LIM_MAX 1.0
@@ -295,7 +295,7 @@ void loop() {
                 sprintf(MSG_BUFFER, "wanted = %0.5f, measured=%0.5f, pulseCount=%ld", wanted_absolute_angle_rad, measured_absolute_angle_rad, pulseCount);
                 Log("MOVE_RIGHT_PID", MSG_BUFFER, LOG_MEDIUM);
 
-                sprintf(MSG_BUFFER, "output = %d, error=%0.5f, error_sum=%0.5f, dError=%0.5f", (int) output*100, PID.error, PID.sum_error, PID.d_error);
+                sprintf(MSG_BUFFER, "output = %d, error=%0.5f, error_sum=%0.5f, dError=%0.5f", (int) output*100, PID.error, PID.sum_error, PID.d_error_filt);
                 Log("MOVE_RIGHT_PID", MSG_BUFFER, LOG_HIGH);
             }
 
@@ -328,7 +328,7 @@ void loop() {
                 sprintf(MSG_BUFFER, "wanted = %0.5f, measured=%0.5f, pulseCount=%ld", wanted_absolute_angle_rad, measured_absolute_angle_rad, pulseCount);
                 Log("MOVE_LEFT_PID(1)", MSG_BUFFER, LOG_MEDIUM);
 
-                sprintf(MSG_BUFFER, "output = %d, error=%0.5f, error_sum=%0.5f, dError=%0.5f", (int) output*100, PID.error, PID.sum_error, PID.d_error);
+                sprintf(MSG_BUFFER, "output = %d, error=%0.5f, error_sum=%0.5f, dError=%0.5f", (int) output*100, PID.error, PID.sum_error, PID.d_error_filt);
                 Log("MOVE_LEFT_PID", MSG_BUFFER, LOG_HIGH);
             }
             

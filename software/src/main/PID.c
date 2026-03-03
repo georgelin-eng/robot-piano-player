@@ -5,7 +5,7 @@ void PIDController_Init(PIDController *pid) {
 	pid->out = 0.0f;
     pid->sum_error = 0.0f;
     pid->prev_error = 0.0f;
-    pid->d_error = 0.0f;
+    pid->d_error_filt = 0.0f;
 }
 
 float PIDController_Update(PIDController *pid, float setpoint, float measurement) {
