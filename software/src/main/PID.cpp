@@ -14,7 +14,7 @@ float PIDController_Update(PIDController *pid, float setpoint, float measurement
 	* Error signal
 	*/
     float error = setpoint - measurement;
-    float dError;
+    float d_error;
 
 	/*
 	* Proportional
@@ -37,14 +37,14 @@ float PIDController_Update(PIDController *pid, float setpoint, float measurement
 	/*
 	* Derivative (band-limited differentiator)
 	*/
-
-    pid->d_error = (1 - pid->beta)*  (pid->beta) * (error - pid->prev_error) / pid->control_interval;
+    d_error = (error - pid->prev_error) / pid->control_interval;
+    pid->d_error_filt = (1 - pid->beta)*pid->d_error_filt + (pid->beta) * d_error;
 
 	/*
 	* Compute output and apply limits
 	*/
     integrator     = pid->Ki * pid->sum_error;
-    differentiator = pid->Kd * pid->d_error;
+    differentiator = pid->Kd * pid->d_error_filt;
 
     // Stiction mangement
 

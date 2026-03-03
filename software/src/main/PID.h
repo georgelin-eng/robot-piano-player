@@ -29,7 +29,7 @@ typedef struct {
 	float error;
 	float sum_error;
 	float prev_error;			
-	float d_error;			
+	float d_error_filt;			
 
 	/* Controller output */
 	float out;
