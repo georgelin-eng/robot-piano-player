@@ -1,6 +1,7 @@
 #ifndef PID_CONTROLLER_H
 #define PID_CONTROLLER_H
 
+// Adapted from https://github.com/pms67/PID
 typedef struct {
 
 	// Controller gains
