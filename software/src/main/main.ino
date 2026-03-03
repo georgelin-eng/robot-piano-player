@@ -5,6 +5,7 @@
 #include "pins.h"        // pin to variable mappings
 #include "commands.h"    // command table
 #include "peripherals.h" // ISRs for interacting with peripherals
+#include "PID.h"         // PID functions
 
 #define RAD_PER_PULSE 0.0981747704247*4  // 2pi / 64.
 #define KJT 0.00097000000000000005055  // joint-to-task space: 1:10 gearbox + 17.4mm diameter pulley 
@@ -14,6 +15,17 @@
 #define ANGLE_ERR_THRS (POS_ERR_THRS * KTJ)
 
 #define PWM_FREQ 20000 // 20KHz
+#define PID_CONTROL_FREQ 80.0
+#define PID_CONTROL_INTERVAL (1 / PID_CONTROL_FREQ)
+
+// PID parameters
+#define PID_KP 0.0746
+#define PID_KI 0.0033
+#define PID_KD 0.0044
+#define PID_KAW 0.01
+#define PID_BETA 0.2759
+#define PID_LIM_MIN -1.0
+#define PID_LIM_MAX 1.0
 
 // Logging parameters
 enum eLogLevel {
@@ -34,12 +46,13 @@ char MSG_BUFFER[64]; // global message buffer for serial logging
 RP2040_PWM* PWM1_Instance;
 RP2040_PWM* PWM2_Instance;
 
+// PID instance
+PIDController PID;
+
 // Motor control variables
 volatile long pulseCount = 0;
-volatile long prev_pulseCount;
 volatile long diff_pulseCount;
-volatile long diff_pulseCount_filtered;
-volatile int Beta = 0.2759;
+volatile long prev_pulseCount;
 volatile float ANGLE;
 volatile float POSITION;
 
@@ -76,12 +89,6 @@ enum eTestCase {
 eFSM_STATE state = IDLE;
 eTestCase  test_case = spin_direction_home_test;
 
-struct K_PID {
-    float Kp;
-    float Ki;
-    float Kd;
-};
-
 // ------------------------ S E T U P    C O D E    B E G I N ------------------------
 
 void setup() {
@@ -103,6 +110,16 @@ void setup() {
     PWM1_Instance = new RP2040_PWM(PWM1_pin, PWM_FREQ, 0);
     PWM2_Instance = new RP2040_PWM(PWM2_pin, PWM_FREQ, 0);
 
+    // PID setup
+    PID.Kp = PID_KP;
+    PID.Ki = PID_KI;
+    PID.Kd = PID_KD;
+    PID.Kaw = PID_KAW;
+    PID.beta = PID_BETA;
+    PID.limMin = PID_LIM_MIN;
+    PID.limMax = PID_LIM_MAX;
+    PID.control_interval = PID_CONTROL_INTERVAL;
+
     state = IDLE;
 }
 
@@ -123,14 +140,10 @@ void loop() {
     
     static unsigned long prev_move_right_time = 0;
     static unsigned long prev_move_left_time = 0;
-    const static double control_interval = 1/80.0;
 
     static double measured_absolute_angle_rad;
     static double wanted_absolute_angle_rad;
     static double error;
-    static double dError;
-    static double error_sum;
-    static double prev_error;
     static double output;
     static int first_entry ; 
 
@@ -142,23 +155,12 @@ void loop() {
     // TODO: Might need gain scheduling for left vs right side response
     // Linear interpolation of PID not needed. Can use basic piecewaise gain schedule
 
-    const static struct K_PID PID_left = 
-    {
-        .Kp = 0.0746,
-        .Ki = 0.0033,
-        .Kd = 0.0044
-    };
 
-    const static struct K_PID PID_right = 
-    {
-        .Kp = 0.0746,
-        .Ki = 0.0033,
-        .Kd = 0.0044
-    };
 
     // --------- FSM BEGIN ---------
     switch(state) {
         case(IDLE):
+            PIDController_Init(&PID);
             pwm_dc = 0;
             first_entry = 0;
             if (TEST_MODE_ENABLED) {
@@ -170,8 +172,7 @@ void loop() {
             break;
         case(TEST):
             Log("FSM", "Starting Test...", LOG_LOW);
-
-            error_sum = 0;
+            PIDController_Init(&PID);
 
             switch (test_case) {
                 case (spin_direction_home_test):
@@ -246,13 +247,8 @@ void loop() {
                 Log("FSM", MSG_BUFFER, LOG_MEDIUM);
 
                 prev_pulseCount = pulseCount;
-
-                // if (speed < 0.05) {
-                    // state = SLOW_RAMP;
-                // }
             }
 
-            // display 
             break;
 
         case (SOFT_STOP):
@@ -281,46 +277,25 @@ void loop() {
                 first_entry = 1;
             }
 
-            if(millis() - prev_move_right_time >= control_interval*1e3){
-                prev_move_right_time = millis();
+            if(micros() - prev_move_right_time >= PID_CONTROL_INTERVAL*1e6){
+                prev_move_right_time = micros();
 
-                error = wanted_absolute_angle_rad - measured_absolute_angle_rad;
-                diff_pulseCount = pulseCount - prev_pulseCount;
-                diff_pulseCount_filtered = (1-Beta)*diff_pulseCount_filtered + Beta*diff_pulseCount;
-                speed = RAD_PER_PULSE*diff_pulseCount_filtered/control_interval;
-                prev_pulseCount = pulseCount;
-
-                //Get initial error signal
-
-                //Calculate integral and different terms (converting control interval into seconds)
-                dError = (error - prev_error) / control_interval; 
-                error_sum = error_sum + error*control_interval;
-                if (abs(error_sum) > 174) error_sum / abs(error_sum) * 174;
-
-                output = PID_right.Kp*error + PID_right.Ki*error_sum + PID_right.Kd*dError;
-                prev_error = error;
-
-                if (output > 1.0) output = 1.0;
-                else if (output < -1.0)  output = -1.0;
-
-                if (output > 0) set_right_PWM((int)output*100);
-                else set_left_PWM((int) abs(output)*100);
-
+                output = PIDController_Update(&PID, wanted_absolute_angle_rad, measured_absolute_angle_rad);
+                
+                set_PWM(output);
 
                 if (abs(error) < ANGLE_ERR_THRS) {
                     state = MOVE_LEFT_PID;
-                    error_sum = 0;
-                    prev_error = 0;
-                    first_entry = 0;
-                    set_left_PWM((int) abs(0*100));
-                    set_right_PWM((int) (0*100));
+                    PIDController_Init(&PID);
+                    set_left_PWM(0);
+                    set_right_PWM(0);
                     delay(1000);
                 }
 
                 sprintf(MSG_BUFFER, "wanted = %0.5f, measured=%0.5f, pulseCount=%ld", wanted_absolute_angle_rad, measured_absolute_angle_rad, pulseCount);
                 Log("MOVE_RIGHT_PID", MSG_BUFFER, LOG_MEDIUM);
 
-                sprintf(MSG_BUFFER, "output = %d, error=%0.5f, error_sum=%0.5f, dError=%0.5f", (int) output*100, error, error_sum, dError);
+                sprintf(MSG_BUFFER, "output = %d, error=%0.5f, error_sum=%0.5f, dError=%0.5f", (int) output*100, PID.error, PID.sum_error, PID.d_error);
                 Log("MOVE_RIGHT_PID", MSG_BUFFER, LOG_HIGH);
             }
 
@@ -334,52 +309,26 @@ void loop() {
                 error = wanted_absolute_angle_rad - measured_absolute_angle_rad;
                 first_entry = 1;
             }
-            if(millis() - prev_move_left_time >= control_interval*1e3){ 
+            if(micros() - prev_move_left_time >= PID_CONTROL_INTERVAL*1e6){ 
+                prev_move_left_time = micros();
+                output = PIDController_Update(&PID, wanted_absolute_angle_rad, measured_absolute_angle_rad);
 
-                prev_move_left_time = millis();
-
-                error = wanted_absolute_angle_rad - measured_absolute_angle_rad;
-          
-                diff_pulseCount = pulseCount - prev_pulseCount;
-                diff_pulseCount_filtered = (1-Beta)*diff_pulseCount_filtered + Beta*diff_pulseCount;
-                speed = RAD_PER_PULSE*diff_pulseCount_filtered/control_interval;
-                prev_pulseCount = pulseCount;
-
-                //Get initial error signal
-                error = wanted_absolute_angle_rad - measured_absolute_angle_rad;
-
-                //Calculate integral and different terms (converting control interval into seconds)
-                dError = (error - prev_error) / (control_interval); 
-
-                // if (speed > 1.0) {
-                    error_sum = error_sum + error*control_interval;
-                // }
-                if (abs(error_sum) > 174) error_sum / abs(error_sum) * 174;
-
-                output = PID_left.Kp*error + PID_left.Ki*error_sum + PID_left.Kd*dError;
-                prev_error = error;
-
-                if (output > 1.0) output = 1.0;
-                else if (output < -1.0) output = -1.0;
-
-                if(output > 0) set_right_PWM((int) (output*100));
-                else set_left_PWM((int) abs(output*100));
+                set_PWM(output);
 
                 if (abs(error) < ANGLE_ERR_THRS) {
                     state = MOVE_RIGHT_PID;
                     // state = MOVE_LEFT_PID;
-                    prev_error = 0;
-                    error_sum = 0;
-                    first_entry = 0;
-                    set_left_PWM((int) abs(0*100));
-                    set_right_PWM((int) (0*100));
+
+                    PIDController_Init(&PID);
+                    set_left_PWM(0);
+                    set_right_PWM(0);
                     delay(1000);
                 } 
 
                 sprintf(MSG_BUFFER, "wanted = %0.5f, measured=%0.5f, pulseCount=%ld", wanted_absolute_angle_rad, measured_absolute_angle_rad, pulseCount);
                 Log("MOVE_LEFT_PID(1)", MSG_BUFFER, LOG_MEDIUM);
 
-                sprintf(MSG_BUFFER, "output = %d, error=%0.5f, error_sum=%0.5f, dError=%0.5f", (int) output*100, error, error_sum, dError);
+                sprintf(MSG_BUFFER, "output = %d, error=%0.5f, error_sum=%0.5f, dError=%0.5f", (int) output*100, PID.error, PID.sum_error, PID.d_error);
                 Log("MOVE_LEFT_PID", MSG_BUFFER, LOG_HIGH);
             }
             
@@ -495,6 +444,14 @@ void loop() {
         }
     }
     */
+}
+
+
+void set_PWM(float output) {
+    int pwm_dc = (int) (pwm_dc * 100);
+
+    if (pwm_dc > 0) set_right_PWM(pwm_dc);
+    else            set_left_PWM(abs(pwm_dc));
 }
 
 /*
