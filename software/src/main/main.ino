@@ -37,7 +37,7 @@ enum eLogLevel {
     LOG_DEBUG  = 500
 };
 
-#define GLOBAL_LOG_LEVEL LOG_HIGH
+#define GLOBAL_LOG_LEVEL LOG_LOW
 #define TEST_MODE_ENABLED 1
 
 char MSG_BUFFER[64]; // global message buffer for serial logging
@@ -87,14 +87,14 @@ enum eTestCase {
 };
 
 eFSM_STATE state = IDLE;
-eTestCase  test_case = spin_direction_home_test;
+eTestCase  test_case = position_drift_test;
 
 // ------------------------ S E T U P    C O D E    B E G I N ------------------------
 
 void setup() {
     pinMode(A0, INPUT); // current_sense_i
     pinMode(24, INPUT); // ENCA_i
-    pinMode(25, INPUT); // ENCB_i
+    pinMode(25, INPUT); // ENCB_ic:\Users\flipa\OneDrive - UBC\University\Course Materials\3rd year\ELEC 391\robot-piano-player\circuits\pcb_test\pcb_test.ino
     pinMode(A3, OUTPUT); // PWM_o
     pinMode(4, INPUT); // prox_sens_i
     pinMode(5, OUTPUT); // fault_detected_n
@@ -448,7 +448,10 @@ void loop() {
 
 
 void set_PWM(float output) {
-    int pwm_dc = (int) (pwm_dc * 100);
+    int pwm_dc = (int) (output * 100);
+
+    sprintf(MSG_BUFFER, "PWM = %f, %d", output, pwm_dc);
+    Log("PWM VAL", MSG_BUFFER, LOG_MEDIUM);
 
     if (pwm_dc > 0) set_right_PWM(pwm_dc);
     else            set_left_PWM(abs(pwm_dc));

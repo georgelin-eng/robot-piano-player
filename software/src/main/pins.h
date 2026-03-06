@@ -3,7 +3,7 @@
 
 #define ENCA_pin 24
 #define ENCB_pin 25
-#define PWM1_pin  5
-#define PWM2_pin  6
+#define PWM1_pin  6
+#define PWM2_pin  5
 
 #endif
