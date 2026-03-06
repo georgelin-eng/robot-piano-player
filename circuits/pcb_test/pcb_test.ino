@@ -22,16 +22,15 @@
 #define CURRENT_S2 27   //  A1 current sense 2
 
 
-#define SOL_TEST_MODE 0 // tests solenoid function - S1 controls sol 1, S2 controls sol 13 (on moving board)
-#define PROX_TEST_MODE 1 // tests proximity sensor
-#define MOTOR_TEST_MODE 2 // tests motor - left and right every MOTOR_DELAY ms
-#define CURRENT_SENSE_MODE 3 // test motor and print value of the current sense on the screen
-#define I2C_SCAN_MODE 4 // scans for I2C devices - should get one at 0x20 and one at 0x21 with both boards
+#define I2C_SCAN_MODE 0 // scans for I2C devices - should get one at 0x20 and one at 0x21 with both boards
+#define SOL_TEST_MODE 1 // tests solenoid function - S1 controls sol 1, S2 controls sol 13 (on moving board)
+#define PROX_TEST_MODE 2 // tests proximity sensor
+#define MOTOR_TEST_MODE 3 // tests motor - left and right every MOTOR_DELAY ms
+#define CURRENT_SENSE_MODE 4 // test motor and print value of the current sense on the screen
 
 #define MOVE_BOARD 1 // 1 if connected
 #define PWM_FREQ 20000 // 20KHz
-#define MOTOR_DELAY 2000 // 1s
-#define RUNNING_AVG_SIZE 10 // Number of samples for running average
+#define MOTOR_DELAY 1000 // 1s
 
 Adafruit_MCP23X17 mcp_main;
 Adafruit_MCP23X17 mcp_move;
@@ -52,37 +51,28 @@ int sense_val2 = -1;
 int prev_sval1 = -1;
 int prev_sval2 = -1;
 
-// Running average variables
-int adc_buffer1[RUNNING_AVG_SIZE] = {0};
-int adc_buffer2[RUNNING_AVG_SIZE] = {0};
-int buffer_index = 0;
-float sense_volt1 = 0.0;
-float sense_volt2 = 0.0;
-float sense_current1 = 0.0;
-float sense_current2 = 0.0;
-
 char output[16];
 
-int mode = SOL_TEST_MODE; // set mode here
+int mode = MOTOR_TEST_MODE; // set mode here
 
 // Non-blocking timer variables
 unsigned long motor_last_change = 0;
+bool motor_going_left = true;
 unsigned long current_time = 0;
-int motor_state = 0; // 0=left, 1 = left-fast, 2=stop, 3=right, 4=right-fast, 5=stop
 
 char* get_mode_name(int m) {
   switch(m) {
-    case 0: return "Mode: Sol Test";
-    case 1: return "Mode: Prox Test";
-    case 2: return "Mode: Motor Test";
-    case 3: return "Mode: Curr Sense";
-    case 4: return "Mode: I2C Scan";
+    case 0: return "Mode: I2C Scan";
+    case 1: return "Mode: Sol Test";
+    case 2: return "Mode: Prox Test";
+    case 3: return "Mode: Motor Test";
+    case 4: return "Mode: Curr Sense";
     default: return "Mode: Unknown";
   }
 }
 
 void setup() {
-  //delay(5000);
+  delay(5000);
   Serial.begin(9600);
 
   lcd.init();
@@ -136,7 +126,7 @@ void setup() {
     Serial.print("Configured PWM2\r\n");
   }
 
-  delay(3000);
+  delay(2000);
   lcd.clear();
   lcd.writeData(get_mode_name(mode));
   Serial.print("Starting loop\r\n");
@@ -145,7 +135,7 @@ void setup() {
 void loop() {
   button_3_val = digitalRead(BUTTON_3_PIN);
   if (button_3_val == LOW) {
-    mode = (mode + 1) % 3; // cycle through modes
+    mode = (mode + 1) % 5; // cycle through modes
     lcd.clear();
     lcd.writeData(get_mode_name(mode));
 
@@ -154,13 +144,9 @@ void loop() {
     prev_prox_val = -1;
     prev_sval1 = -1;
     prev_sval2 = -1;
-    
+
     set_left_PWM(0); // stop motor when changing modes
     set_right_PWM(0);
-    
-    // Reset timers
-    motor_last_change = millis();
-    motor_state = 0;
     
     delay(500); // debounce delay
   }
@@ -175,7 +161,7 @@ void loop() {
 
     if (button_1_val != prev_button_1 || button_2_val != prev_button_2) {
       if (MOVE_BOARD) sprintf(output, "Sol 1:%d Sol 13:%d", !button_1_val, !button_2_val);
-      else sprintf(output, "Sol 1:%d         ", !button_1_val);
+      else sprintf(output, "Sol 1:%d", !button_1_val);
       
       lcd.setDataAddr(LCD_Line2Start);
       lcd.writeData(output);
@@ -188,8 +174,8 @@ void loop() {
     prox_val = digitalRead(PROX_PIN);
 
     if (prox_val != prev_prox_val) {
-      if (prox_val) sprintf(output, "No metal        ");
-      else sprintf(output, "Metal detected  ");
+      if (prox_val) sprintf(output, "No prox");
+      else sprintf(output, "Prox!!!");
 
       lcd.setDataAddr(LCD_Line2Start);
       lcd.writeData(output);
@@ -201,29 +187,18 @@ void loop() {
   if (mode == MOTOR_TEST_MODE) {
     current_time = millis();
     
-    // Change motor state every MOTOR_DELAY ms
+    // Change motor direction every MOTOR_DELAY ms
     if (current_time - motor_last_change >= MOTOR_DELAY) {
-      motor_state = (motor_state + 1) % 6;
+      motor_going_left = !motor_going_left;
       motor_last_change = current_time;
     }
     
-    // Set motor PWM 
-    if (motor_state == 0) {
+    if (motor_going_left) {
       set_left_PWM(20);
-      sprintf(output, "move left       ");
-    } else if (motor_state == 1) {
-      set_left_PWM(40);
-      sprintf(output, "move left fast  ");
-    } else if (motor_state == 2 || motor_state == 5) {
-      set_left_PWM(0);
-      set_right_PWM(0);
-      sprintf(output, "stopped         ");
-    } else if (motor_state == 3) {
+      sprintf(output, "moving left ");
+    } else {
       set_right_PWM(20);
-      sprintf(output, "move right       ");
-    } else if (motor_state == 4) {
-      set_right_PWM(40);
-      sprintf(output, "move right fast ");
+      sprintf(output, "moving right");
     }
     
     lcd.setDataAddr(LCD_Line2Start);
@@ -231,55 +206,18 @@ void loop() {
   }
 
   if (mode == CURRENT_SENSE_MODE) {
-    current_time = millis();
-    
-    // Change motor state every MOTOR_DELAY ms
-    if (current_time - motor_last_change >= MOTOR_DELAY) {
-      motor_state = (motor_state + 1) % 4;
-      motor_last_change = current_time;
-    }
-    
-    // Set motor PWM 
-    if (motor_state == 0) {
-      set_left_PWM(20);
-    } else if (motor_state == 1 || motor_state == 3) {
-      set_left_PWM(0);
-      set_right_PWM(0);
-    } else {
-      set_right_PWM(20);
-    }
+    // Run motor continuously while sensing
+    set_left_PWM(20);
     
     sense_val1 = analogRead(CURRENT_S1);
     sense_val2 = analogRead(CURRENT_S2);
 
-    // // Update running average 
-    // adc_buffer1[buffer_index] = sense_val1;
-    // adc_buffer2[buffer_index] = sense_val2;
-    // buffer_index = (buffer_index + 1) % RUNNING_AVG_SIZE;
-    
-    // // Calculate running averages
-    // int sum1 = 0, sum2 = 0;
-    // for (int i = 0; i < RUNNING_AVG_SIZE; i++) {
-    //   sum1 += adc_buffer1[i];
-    //   sum2 += adc_buffer2[i];
-    // }
-    // sense_volt1 = (sum1 / (float)RUNNING_AVG_SIZE / 4095.0) * 3.3;
-    // sense_volt2 = (sum2 / (float)RUNNING_AVG_SIZE / 4095.0) * 3.3;
-
-    sense_volt1 = sense_val1 / 4095.0 * 3.3;
-    sense_volt2 = sense_val2 / 4095.0 * 3.3;
-
     if (sense_val1 != prev_sval1 || sense_val2 != prev_sval2) {
-      // Convert voltage to current using sense resistor and amplifying circuit
-      // Current = V / (Rsense × gain) = V / (0.01 × (3900/51)) = V × 51 / 39
-      sense_current1 = sense_volt1 * 51.0 / 39.0;
-      sense_current2 = sense_volt2 * 51.0 / 39.0;
+      // Convert ADC values to voltage (12-bit ADC, 3.3V reference)
+      float volt1 = (sense_val1 / 4095.0) * 3.3;
+      float volt2 = (sense_val2 / 4095.0) * 3.3;
       
-
-      sprintf(output, "V1:%.2f V2:%.2f ", sense_volt1, sense_volt2);
-      lcd.setDataAddr(LCD_Line1Start);
-      lcd.writeData(output);
-      sprintf(output, "I1:%.2f I2:%.2f ", sense_current1, sense_current2);
+      sprintf(output, "S1:%.2fV S2:%.2fV", volt1, volt2);
       lcd.setDataAddr(LCD_Line2Start);
       lcd.writeData(output);
 
