@@ -1,4 +1,5 @@
-
+#ifndef PERIPHERALS_H
+#define PERIPHERALS_H   
 /*
 CCW: A leading B
      ┌───┐     ┌───┐
@@ -54,3 +55,5 @@ void B_negedge() {
         pulseCount--;
     }
 }
+
+#endif
