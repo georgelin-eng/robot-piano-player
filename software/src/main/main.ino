@@ -124,31 +124,12 @@ void setup() {
 void loop() {
 
     //Printing for encoder
-    static unsigned long prev_log_time = 0;
-    const static unsigned long log_interval  = 500; // ms
-
-    static unsigned long prev_ramp_time = 0;
-    const static unsigned long ramp_interval = 10; // ms
-
-    static unsigned long prev_move_time = 0;
-    const static unsigned long move_interval = 500; // ms
     
     static unsigned long prev_move_right_time = 0;
     static unsigned long prev_move_left_time = 0;
 
-    static double measured_absolute_angle_rad;
-    static double wanted_absolute_angle_rad;
-    static double error;
-    static double output;
-    static int first_entry ; 
-
-    int pwm_dc;    
-
-    double speed;
-
-    
-
-    measured_absolute_angle_rad = pulseCount * RAD_PER_PULSE;
+    static double measured_rad;
+    static double wanted_rad;
     // TODO: Might need gain scheduling for left vs right side response
     // Linear interpolation of PID not needed. Can use basic piecewaise gain schedule
 
@@ -170,7 +151,7 @@ void loop() {
 
             sprintf(LCD_BUFFER, "HOMING");
             LCD_Log(LCD_BUFFER, 1);
-            sprintf(LCD_BUFFER, "p1=%0d, p2=%0d", digitalRead(PROX_SENSE1), digitalRead(PROX_SENSE2));
+            sprintf(LCD_BUFFER, "p1=%0d, p2=%0d", digitalRead(PROX_SENSE1), digitalRead(PROX_SENSE2));rm -
             LCD_Log(LCD_BUFFER, 2);
             
             if (digitalRead(PROX_SENSE1) == 0) {
@@ -178,6 +159,27 @@ void loop() {
             }
 
             break;
+
+        case(RUN):
+            // Command parsing and the PID control loop happen at the same interval. 
+            // at 80Hz this becomes a 12.5ms delay in command parsing. 
+
+            //1. read command type (MOVE / PLAY)
+            //2. 
+            
+            if(micros() - prev_pid_time  >= control_interval*1e6){
+                prev_pid_time = micros();
+
+                measured_rad = pulseCount * RAD_PER_PULSE;
+
+                wanted_rad = 0.15; // TODO: Get from command table
+
+                output = PIDController_Update(&PID, wanted_rad, measured_rad);
+                set_PWM(output);
+
+            }
+            break;
+
         case(ERROR):
             set_left_PWM(0);
             set_right_PWM(0);

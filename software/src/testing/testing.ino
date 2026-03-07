@@ -3,7 +3,7 @@
 #include <stdio.h>       // Standard IO
 #include "RP2040_PWM.h"  // PWM
 #include "pins.h"        // pin to variable mappings
-#include "commands.h"    // command table
+// #include "commands.h"    // command table
 #include "peripherals.h" // ISRs for interacting with peripherals
 #include "PID.h"         // PID functions
 
@@ -11,12 +11,13 @@
 #include <string>
 // #include "I2CScanner.h"
 
-#define RAD_PER_PULSE 0.0981747704247*4  // 2pi / 64.
+#define RAD_PER_PULSE 0.0981747704247  // 2pi / 64.
 #define KJT 0.00097000000000000005055  // joint-to-task space: 1:10 gearbox + 17.4mm diameter pulley 
 #define KTJ 1030.9278350515462535      // task-to-joint space
 
 #define POS_ERR_THRS   (15 * 0.001)     // 3mm precision
-#define ANGLE_ERR_THRS (POS_ERR_THRS * KTJ)
+// #define ANGLE_ERR_THRS (POS_ERR_THRS * KTJ)
+#define ANGLE_ERR_THRS 5
 
 #define PWM_FREQ 20000 // 20KHz
 #define PID_CONTROL_FREQ 80.0
@@ -107,7 +108,7 @@ void setup() {
     pinMode(4, INPUT); // prox_sens_i
     pinMode(5, OUTPUT); // fault_detected_n
     pinMode(6, OUTPUT); // PWM_dir_o
-    pinMode(PROX_PIN, INPUT); // Proximity sensor
+    pinMode(PROX_SENSE1, INPUT); // Proximity sensor
 
     // Count positive and negative edges encoder to achieve max 64CPR resolution
     attachInterrupt(digitalPinToInterrupt(ENCA_pin), A_posedge, RISING);
@@ -284,8 +285,7 @@ void loop() {
             break;
             
         case(MOVE_RIGHT_PID):
-            wanted_absolute_angle_rad = 0.15 * KTJ;
-            wanted_absolute_angle_rad = 420;
+            wanted_absolute_angle_rad = 110;
 
             if (first_entry == 0)  {
                 error = wanted_absolute_angle_rad - measured_absolute_angle_rad;
@@ -299,7 +299,7 @@ void loop() {
                 
                 set_PWM(output);
 
-                if (abs(error) < ANGLE_ERR_THRS) {
+                if (abs(PID.error) < ANGLE_ERR_THRS) {
                     state = MOVE_LEFT_PID;
                     PIDController_Init(&PID);
                     set_left_PWM(0);
@@ -313,7 +313,7 @@ void loop() {
                 sprintf(MSG_BUFFER, "output = %d, error=%0.5f, error_sum=%0.5f, dError=%0.5f", (int) output*100, PID.error, PID.sum_error, PID.d_error_filt);
                 Log("MOVE_RIGHT_PID", MSG_BUFFER, LOG_HIGH);
 
-                sprintf(LCD_BUFFER, "R PC=%ld", pulseCount);
+                sprintf(LCD_BUFFER, "R rad=%0.2f", measured_absolute_angle_rad);
                 LCD_Log(LCD_BUFFER);
             }
 
@@ -321,7 +321,7 @@ void loop() {
         
         case(MOVE_LEFT_PID):
             // wanted_absolute_angle_rad = -0.15 * KTJ;
-            wanted_absolute_angle_rad = 110;
+            wanted_absolute_angle_rad = 30;
     
             if (first_entry == 0){
                 error = wanted_absolute_angle_rad - measured_absolute_angle_rad;
@@ -333,9 +333,8 @@ void loop() {
 
                 set_PWM(output);
 
-                if (abs(error) < ANGLE_ERR_THRS) {
+                if (abs(PID.error) < ANGLE_ERR_THRS) {
                     state = MOVE_RIGHT_PID;
-                    // state = MOVE_LEFT_PID;
 
                     PIDController_Init(&PID);
                     set_left_PWM(0);
@@ -349,7 +348,7 @@ void loop() {
                 sprintf(MSG_BUFFER, "output = %d, error=%0.5f, error_sum=%0.5f, dError=%0.5f", (int) output*100, PID.error, PID.sum_error, PID.d_error_filt);
                 Log("MOVE_LEFT_PID", MSG_BUFFER, LOG_HIGH);
 
-                sprintf(LCD_BUFFER, "L PC=%ld", pulseCount);
+                sprintf(LCD_BUFFER, "L rad=%0.2f", measured_absolute_angle_rad);
                 LCD_Log(LCD_BUFFER);
             }
             
