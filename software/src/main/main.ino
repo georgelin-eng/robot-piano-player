@@ -1,17 +1,24 @@
-// #define DRV8263H
+#include <stdio.h>             // Standard IO
+#include "RP2040_PWM.h"        // PWM
+#include "pins.h"              // pin to variable mappings
+#include "commands.h"          // command table
+#include "peripherals.h"       // ISRs for interacting with peripherals
+#include "PID.h"               // PID functions
+#include "logging.h"           // logging functions
+#include <Adafruit_MCP23X17.h> // I2C expander library
 
-#include <stdio.h>       // Standard IO
-#include "RP2040_PWM.h"  // PWM
-#include "pins.h"        // pin to variable mappings
-#include "commands.h"    // command table
-#include "peripherals.h" // ISRs for interacting with peripherals
-#include "PID.h"         // PID functions
+#include <LCD1602.h>           // LCD library
+#include "I2CScanner.h"        // I2C device scanning
 
-#define RAD_PER_PULSE 0.0981747704247*4  // 2pi / 64.
+#include <string>
+
+// ----------- DEFINITIONS --------------
+
+#define RAD_PER_PULSE 0.0981747704247  // 2pi / 64.
 #define KJT 0.00097000000000000005055  // joint-to-task space: 1:10 gearbox + 17.4mm diameter pulley 
 #define KTJ 1030.9278350515462535      // task-to-joint space
 
-#define POS_ERR_THRS   (15 * 0.001)     // 3mm precision
+#define POS_ERR_THRS   (3 * 0.001)     // 3mm precision
 #define ANGLE_ERR_THRS (POS_ERR_THRS * KTJ)
 
 #define PWM_FREQ 20000 // 20KHz
@@ -27,67 +34,49 @@
 #define PID_LIM_MIN -1.0
 #define PID_LIM_MAX 1.0
 
-// Logging parameters
-enum eLogLevel {
-    LOG_NONE   = 0,
-    LOG_LOW    = 100,
-    LOG_MEDIUM = 200,
-    LOG_HIGH   = 300,
-    LOG_FULL   = 400,
-    LOG_DEBUG  = 500
-};
+#define FINGERS_IN_EXISTENCE 12
 
 #define GLOBAL_LOG_LEVEL LOG_LOW
-#define TEST_MODE_ENABLED 1
 
-char MSG_BUFFER[64]; // global message buffer for serial logging
+static char MSG_BUFFER[64]; // global message buffer for serial logging
+static char LCD_BUFFER[16]; // LCD buffer
+
+// ------------- OBJECT INSTANCES -------------
+
+// PID instance
+PIDController PID;
 
 //creates pwm instance
 RP2040_PWM* PWM1_Instance;
 RP2040_PWM* PWM2_Instance;
 
-// PID instance
-PIDController PID;
+// Solenoid Driver board
+Adafruit_MCP23X17 mcp_main;
+Adafruit_MCP23X17 mcp_move;
+I2CScanner scanner;
 
-// Motor control variables
-volatile long pulseCount = 0;
-volatile long diff_pulseCount;
-volatile long prev_pulseCount;
-volatile float ANGLE;
-volatile float POSITION;
+// LCD instance
+LCD lcd(LCD_RS, LCD_Not_Use_Port_RW, LCD_E, LCD_D7, LCD_D6, LCD_D5, LCD_D4);
 
-// FSM 
+// --------------GLOBAL VARIABLES---------
+
+// variables to be declared as volatile since they're modified in ISRs
+volatile long pulseCount = 0; 
+
+
+// -------------- ENUMERATIONS --------
+
 enum eFSM_STATE {
     IDLE,
     HOME,
+    RUN_INIT,
     RUN,
     PAUSE, 
     ERROR,
-    POWERDOWN,
-
-    // Tests for software bringup
-    TEST, 
-    SOFT_STOP,
-    HARD_STOP,
-    MOVE_LEFT_HOME,
-    MOVE_RIGHT_HOME,
-    LEFT_SOFT_RAMP,
-    RIGHT_SOFT_RAMP,
-    MOVE_LEFT_PID,
-    MOVE_RIGHT_PID,
-    SLOW_RAMP
+    POWERDOWN
 };
 
-  
-enum eTestCase {
-    spin_direction_home_test,
-    soft_start_test,
-    position_drift_test,
-    motor_intertia_test
-};
-
-eFSM_STATE state = IDLE;
-eTestCase  test_case = position_drift_test;
+eFSM_STATE state;
 
 // ------------------------ S E T U P    C O D E    B E G I N ------------------------
 
@@ -99,6 +88,8 @@ void setup() {
     pinMode(4, INPUT); // prox_sens_i
     pinMode(5, OUTPUT); // fault_detected_n
     pinMode(6, OUTPUT); // PWM_dir_o
+    pinMode(PROX_SENSE1, INPUT); // Proximity sensor1
+    pinMode(PROX_SENSE2, INPUT); // Proximity sensor2
 
     // Count positive and negative edges encoder to achieve max 64CPR resolution
     attachInterrupt(digitalPinToInterrupt(ENCA_pin), A_posedge, RISING);
@@ -121,374 +112,255 @@ void setup() {
     PID.control_interval = PID_CONTROL_INTERVAL;
 
     state = IDLE;
+
+    // LCD setup
+    lcd.init();
+    lcd.displaySwitch(true, true, false);
+    lcd.inputSet(true, false);
+    lcd.clear();
+
+    Serial.print("\r\nScanning!\r\n");
+    scanner.Init();
+  
+    scanner.Scan();
+    if (!mcp_main.begin_I2C(32)) {
+      Serial.print("Error on main board\r\n");
+      while (1);
+    }
+        Serial.print("Found moving board\r\n");
 }
+
 
 // ------------------------ M A I N    C O D E    B E G I N ------------------------
 
 // TODO: Get timers working and start logging encoder reads
 void loop() {
 
-    //Printing for encoder
-    static unsigned long prev_log_time = 0;
-    const static unsigned long log_interval  = 500; // ms
+    static double pid_output;
+    static double measured_rad;
+    static double wanted_rad;
+    static unsigned long prev_pid_time = 0;
 
-    static unsigned long prev_ramp_time = 0;
-    const static unsigned long ramp_interval = 10; // ms
+    static double song_start_time = 0; // time when song starts, used to track elapsed time for command scheduling
+    static double song_elapsed_time = 0; // time elapsed since start of song
+    static double action_start_time = 0; // start time of each action command
+    static double action_end_time   = 0; // target end time of action
 
-    static unsigned long prev_move_time = 0;
-    const static unsigned long move_interval = 500; // ms
-    
-    static unsigned long prev_move_right_time = 0;
-    static unsigned long prev_move_left_time = 0;
+    static int action_type;  // TODO: Make this an enum
+    static int command_idx = 0;
+    static uint16_t current_solenoid;
+    static uint16_t wanted_position;
 
-    static double measured_absolute_angle_rad;
-    static double wanted_absolute_angle_rad;
-    static double error;
-    static double output;
-    static int first_entry ; 
 
-    int pwm_dc;    
-
-    double speed;
-
-    measured_absolute_angle_rad = pulseCount * RAD_PER_PULSE;
     // TODO: Might need gain scheduling for left vs right side response
     // Linear interpolation of PID not needed. Can use basic piecewaise gain schedule
-
-
 
     // --------- FSM BEGIN ---------
     switch(state) {
         case(IDLE):
             PIDController_Init(&PID);
-            pwm_dc = 0;
-            first_entry = 0;
-            if (TEST_MODE_ENABLED) {
-                state = TEST;
-            } else {
-                state = IDLE;
+
+            sprintf(LCD_BUFFER, "IDLE");
+            LCD_Log(LCD_BUFFER, 1);
+            delay(500);
+
+            state = HOME;
+
+            break;
+        case(HOME):
+            set_left_PWM(12); // TODO: Should ramp up to slow speed
+
+            // Use PID controller to get speed measurements (derivative of position)
+            measured_rad = pulseCount * RAD_PER_PULSE;
+            PIDController_Measure(&PID, measured_rad);
+            
+            sprintf(LCD_BUFFER, "HOMING");
+            LCD_Log(LCD_BUFFER, 1);
+            sprintf(LCD_BUFFER, "p1=%0d, w=%0.2f", digitalRead(PROX_SENSE1), PID.d_measured);
+            LCD_Log(LCD_BUFFER, 2);
+            
+            if (digitalRead(PROX_SENSE1) == 0) {
+                state = RUN_INIT;
             }
 
             break;
-        case(TEST):
-            Log("FSM", "Starting Test...", LOG_LOW);
+
+        case(RUN_INIT):
             PIDController_Init(&PID);
 
-            switch (test_case) {
-                case (spin_direction_home_test):
-                    Log("FSM", "Starting spin_direction_home_test", LOG_LOW);
-                    state = MOVE_LEFT_HOME;
-                    break;
-                case (soft_start_test):
-                    state = LEFT_SOFT_RAMP;
-                    break;
-                case (position_drift_test):
-                    Log("FSM", "Starting position_drift_test", LOG_LOW);
-
-                    state = MOVE_LEFT_PID;
-                    break;
-                case (motor_intertia_test):
-                    Log("FSM", "Starting motor_intertia_test", LOG_LOW);
-
-                    // state = SLOW_RAMP;
-                    state = HARD_STOP;
-                    break;
-                default:
-                    state = ERROR;
-            }
-        case (SLOW_RAMP):
-            // Increase PWM DC to 100% +1% every 10ms
-            if (millis() - prev_ramp_time >= ramp_interval) {
-                prev_ramp_time = millis();
-
-                if (pwm_dc < 100) {
-                    pwm_dc = pwm_dc + 1;
-                    sprintf(MSG_BUFFER, "pwm_dc == %d", pwm_dc);
-                    Log("FSM", MSG_BUFFER, LOG_MEDIUM);
-
-                    // 20Khz - 10% DC
-                    set_left_PWM(pwm_dc);
-
-                }
-                else {
-                    state = HARD_STOP;
-                }
-            }
+            song_start_time = millis()/1000.0; // convert to seconds
+            command_idx = 0;
+            state = RUN;        
             break;
+
+        case(RUN):
+            // Command parsing and the PID control loop happen at the same interval. 
+            // at 80Hz this becomes a 12.5ms delay in command parsing. 
+            
+            // NOTE: Code is written for just one hand (RH)
+            // play notes when we've hit start time of command
+            // increment command index when we've reached the end time of the current command
+
+            /*
+                1. read command type (MOVE / PLAY)
+                    1.1
+                    Movement commands:
+
+                    start time - 
+                    end time -
+                    error < X -> Parse next command
+
+                    1.2
+                    Play Command
+                    start time -
+                    Song Run time > start time -> Play
+                    Decode using or command, actuate using for loop (i2c)
+                    end time -> Parse next command
+                    
+
+            */
+            
+            song_elapsed_time = millis()/1000.0 - song_start_time;
+
+            action_type       = schedule[command_idx].action;
+            action_start_time = schedule[command_idx].start_time;
+            action_end_time   = schedule[command_idx].end_time;
+
+            // PID loop
+            if (action_type == RIGHT_MOVE){
+                sprintf(LCD_BUFFER, "%0d: R_MOVE", command_idx);
+                LCD_Log(LCD_BUFFER, 1);
+
+                if(micros() - prev_pid_time  >= PID_CONTROL_INTERVAL*1e6){
+                    prev_pid_time = micros();
+
+                    wanted_position = schedule[command_idx].solenoid_or_position;
+                    wanted_rad = wanted_position * KTJ;
+
+                    measured_rad = pulseCount * RAD_PER_PULSE;
+
+                    pid_output = PIDController_Update(&PID, wanted_rad, measured_rad);
+                    set_PWM(pid_output);
+
+                    sprintf(LCD_BUFFER, "%yd=0.2f: ya=%0.2f", wanted_rad, measured_rad);
+                    LCD_Log(LCD_BUFFER, 2);
+
+                    if (PID.error < ANGLE_ERR_THRS && song_elapsed_time > action_end_time) {
+                        command_idx++;
+                    }
+                }
+            }
+            else if (action_type == RIGHT_PLAY){
+                sprintf(LCD_BUFFER, "%0d: R_PLAY", command_idx);
+                LCD_Log(LCD_BUFFER, 1);
+
+                // DECODE
+                uint16_t mask = schedule[command_idx].solenoid_or_position;
+
+                for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
+                    if (mask & (1 << i)){
+                        set_note_state(i, HIGH);
+                    }
+                    else{
+                        set_note_state(i, LOW);
+                    }
+                }
+                //3 CHECK TIME
+                if (song_elapsed_time >= action_end_time){
+                    for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
+                        set_note_state(i, LOW);
+                    }
+                    command_idx++;
+                }
+            }
         
-        case(MOVE_LEFT_HOME):
-            //Start PWM 1, set PWM 2 to 3.3V
-            set_left_PWM(20);
-            Log("FSM", "Moving left", LOG_MEDIUM);
-            delay(move_interval);
-            state = MOVE_RIGHT_HOME;
-            break;
-        case(MOVE_RIGHT_HOME):
-            //start PWM2, set PWM 1 to 3.3V
-            set_right_PWM(20);
-            Log("FSM", "Moving right", LOG_MEDIUM);
-
-            delay(move_interval);
-            state = MOVE_LEFT_HOME;
             break;
 
-        case (HARD_STOP):
+        case(ERROR):
             set_left_PWM(0);
             set_right_PWM(0);
-
-            if (millis() - prev_log_time >= 10) {
-                prev_log_time = millis();
-                diff_pulseCount = pulseCount - prev_pulseCount;
-
-                speed = RAD_PER_PULSE*diff_pulseCount/10.0 * 1000;
-
-                sprintf(MSG_BUFFER, "speed(rad/s) == %0.5f", speed);
-                //sprintf(MSG_BUFFER, "pulseCount == %ld", pulseCount);
-                Log("FSM", MSG_BUFFER, LOG_MEDIUM);
-
-                prev_pulseCount = pulseCount;
-            }
-
-            break;
-
-        case (SOFT_STOP):
-            // Decrease PWM DC to 0%  -1% every 10ms. 
-            if (millis() - prev_ramp_time >= ramp_interval) {
-                prev_ramp_time = millis();
-
-                if (pwm_dc > 0) {
-                    pwm_dc = pwm_dc - 1;
-
-                    sprintf(MSG_BUFFER, "pwm_dc == %d", pwm_dc);
-                    Log("FSM", MSG_BUFFER, LOG_MEDIUM);
-
-                    set_left_PWM(pwm_dc);
-                    set_right_PWM(pwm_dc);
-                }
-            }
-            break;
-            
-        case(MOVE_RIGHT_PID):
-            wanted_absolute_angle_rad = 0.15 * KTJ;
-            wanted_absolute_angle_rad = 420;
-
-            if (first_entry == 0)  {
-                error = wanted_absolute_angle_rad - measured_absolute_angle_rad;
-                first_entry = 1;
-            }
-
-            if(micros() - prev_move_right_time >= PID_CONTROL_INTERVAL*1e6){
-                prev_move_right_time = micros();
-
-                output = PIDController_Update(&PID, wanted_absolute_angle_rad, measured_absolute_angle_rad);
-                
-                set_PWM(output);
-
-                if (abs(error) < ANGLE_ERR_THRS) {
-                    state = MOVE_LEFT_PID;
-                    PIDController_Init(&PID);
-                    set_left_PWM(0);
-                    set_right_PWM(0);
-                    delay(1000);
-                }
-
-                sprintf(MSG_BUFFER, "wanted = %0.5f, measured=%0.5f, pulseCount=%ld", wanted_absolute_angle_rad, measured_absolute_angle_rad, pulseCount);
-                Log("MOVE_RIGHT_PID", MSG_BUFFER, LOG_MEDIUM);
-
-                sprintf(MSG_BUFFER, "output = %d, error=%0.5f, error_sum=%0.5f, dError=%0.5f", (int) output*100, PID.error, PID.sum_error, PID.d_error_filt);
-                Log("MOVE_RIGHT_PID", MSG_BUFFER, LOG_HIGH);
-            }
-
-            break;
-        
-        case(MOVE_LEFT_PID):
-            // wanted_absolute_angle_rad = -0.15 * KTJ;
-            wanted_absolute_angle_rad = 110;
-    
-            if (first_entry == 0){
-                error = wanted_absolute_angle_rad - measured_absolute_angle_rad;
-                first_entry = 1;
-            }
-            if(micros() - prev_move_left_time >= PID_CONTROL_INTERVAL*1e6){ 
-                prev_move_left_time = micros();
-                output = PIDController_Update(&PID, wanted_absolute_angle_rad, measured_absolute_angle_rad);
-
-                set_PWM(output);
-
-                if (abs(error) < ANGLE_ERR_THRS) {
-                    state = MOVE_RIGHT_PID;
-                    // state = MOVE_LEFT_PID;
-
-                    PIDController_Init(&PID);
-                    set_left_PWM(0);
-                    set_right_PWM(0);
-                    delay(1000);
-                } 
-
-                sprintf(MSG_BUFFER, "wanted = %0.5f, measured=%0.5f, pulseCount=%ld", wanted_absolute_angle_rad, measured_absolute_angle_rad, pulseCount);
-                Log("MOVE_LEFT_PID(1)", MSG_BUFFER, LOG_MEDIUM);
-
-                sprintf(MSG_BUFFER, "output = %d, error=%0.5f, error_sum=%0.5f, dError=%0.5f", (int) output*100, PID.error, PID.sum_error, PID.d_error_filt);
-                Log("MOVE_LEFT_PID", MSG_BUFFER, LOG_HIGH);
-            }
-            
-            break;
-        case(ERROR):
             state = ERROR;
+            Log ("FSM", "ERROR!", LOG_NONE);
+
+            sprintf(LCD_BUFFER, "ERROR!");
+            LCD_Log(LCD_BUFFER, 1);
+
+            sprintf(LCD_BUFFER, "p1=%0d, p2=%0d", digitalRead(PROX_SENSE1), digitalRead(PROX_SENSE2));
+            LCD_Log(LCD_BUFFER, 2);
             break;
         default:
-            Log ("FSM", "Unhandled State!", LOG_NONE);
-            state = ERROR;
+            sprintf(LCD_BUFFER, "Unhandeled!");
+            LCD_Log(LCD_BUFFER, 1);
     }
-
-    // if (millis() - prev_log_time >= log_interval) {
-    //     prev_log_time = millis();
-
-    //     noInterrupts();
-    //     sprintf(MSG_BUFFER, "pulseCount == %ld", pulseCount);
-    //     Log("ENCODER", MSG_BUFFER, LOG_MEDIUM);
-
-    //     interrupts();
-    // }
-  
-    /*
-
-    <ACTION, SOLENOID_OR_POSITION, START_TIME, END_TIME >
-        
-    ACTION (uint8_t)
-    RIGHT_MOVE
-    RIGHT_PLAY
-    LEFT_PLAY
-        
-    SOLENOID_OR_POSITION (uint16_t)
-    SOLENOID 
-    If ACTION is a PLAY command then decode the individual bits to specify if a solenoid is on or off. 
-    Using uint16_t allows this to work for up to 16 solenoids per hand
-
-    POSITION
-    If ACTION is a MOVE command then change the setpoint. 
-    Either parsed as an absolute position in cm or as a MIDI note pitch that gets mapped to a table of floats if key widths don’t fit well into integers
-    start_time (float)
-    Pathfinding should convert time to fixed-point value based on MCU frequency
-    The PID control loop will prevent next command execution until position settles to <5mm of final. After this, PWM is set to 0. 
-    Relative time that this command will take. New commands will only execute after this timer has run out 
-
-    end_time (float)
-    */
-
-    /*
-
-    double wanted_absolute_angle_rad;
-    double error;
-    double dError;
-    double error_sum;
-    double prev_error;
-    int start_millis = millis();
-
-    unsigned long currentMicros;
-    unsigned long previousMicros = 0;
-
-    unsigned long freq = 80; //FREQUENCY IN HZ
-    unsigned long control_interval = 1/freq; //DELAY INTERVAL REQUIRED FOR THIS FREQUENCY
-    for (int i = 0; i <= str.length(command); i++){
-        //RESET FINGERS AT START OF NEXT ACTION OR END OF PREVIOUS???
-        //Do WE WANT A SETTLE TIME FOR RETRACTION FO SOLENOID TO STOP MOVEMENT DURING OSCILLATIONgi
-
-
-        //Start parsing actions
-        if (command[i].action == RIGHT_MOVE){
-            wanted_absolute_angle_rad = action[i].position;
-            //Res 64 -> 360 deg 
-            // PulseCount * 64/360 = angle change
-            absolute_angle_rad = pulseCount * RAD_PER_PULSE;
-            error = wanted_absolute_angle_rad - absolute_angle_rad;
-        }
-
-        else if(command[i].action == RIGHT_PLAY){
-            //PARSE RH PLAYING COMMAND BY OUTPUTTING CORRECT ADDRESSES
-
-
-            // NO NEED FOR PID CONTROL
-            error = 0;
-        }
-        else if(command[i].action == LEFT_PLAY){                     
-           //PARSE LH PLAYING COMMAND BY OUTPUTTING CORRECT ADDRESSES
-            // NO NEED FOR PID CONTROL
-            error = 0;
-        }
-
-
-        //Envelope with time constraint of action lenght? 
-        //millis/1000 -> convert both to secodns.
-        while (abs(error) >= ???????) {
-            //Res 64 -> 360 deg 
-            // PulseCount * 64/360 = angle change
-            absolute_angle_rad = pulseCount * 64/2pi;
-            currentMicros = micros();
-            if(currentMicros - previousMicros >= control_interval){
-                previousMicros = currentMicros;
-                
-                //Get initial error signal
-                error = wanted_absolute_angle_rad - absolute_angle_rad;
-
-                //Calculate integral and different terms (converting control interval into seconds)
-                dError = (error - prev_error) / (control_interval*10**(-6)); 
-                error_sum+= error_sum*control_interval*10**(-6);
-                output = kp*error + ki*error_sum + kd*dError;
-                prev_error = error;
-            }
-        }
-
-        while (millis()/1000.0 < command[i].end_time + (float)start_millis){
-            //Wait till we are ready for the next instruction.
-        }
-    }
-    */
 }
 
+// ------------------------ F U N C T I O N S    B E G I N ------------------------
 
 void set_PWM(float output) {
     int pwm_dc = (int) (output * 100);
-
-    sprintf(MSG_BUFFER, "PWM = %f, %d", output, pwm_dc);
-    Log("PWM VAL", MSG_BUFFER, LOG_MEDIUM);
 
     if (pwm_dc > 0) set_right_PWM(pwm_dc);
     else            set_left_PWM(abs(pwm_dc));
 }
 
-/*
-    When using DRV8263H board, DRVOFF needs to be attached to 3.3V and sleep to GND
-    Treat PWM2_pin as PH pin for left and right control (1/0) and PWM1 as main (PWM)
-
-    When using Hbridge, optoisolators are referenced to 3.3V so inverse of DC is required
-    Left vs right control is achieved by difference between PWM1 and PWM2. 
-    For simplicity the opposite side is completely turned off via setting PWM to 100
-*/
 void set_left_PWM(int pwm_dc) {
     sprintf(MSG_BUFFER, "Left PWM = %d", pwm_dc);
-    Log("LEFT VAL", MSG_BUFFER, LOG_MEDIUM);
-    #ifdef DRV8263H 
-        PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, pwm_dc);
-        PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 0);
-    #else
-        PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100);
-        PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100 - pwm_dc);
-    #endif
+    Log("LEFT VAL", MSG_BUFFER, LOG_HIGH);
+    PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100);
+    PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100 - pwm_dc);
 }
 
 void set_right_PWM(int pwm_dc) {
     sprintf(MSG_BUFFER, "Right PWM = %d", pwm_dc);
-    Log("RIGHT VAL", MSG_BUFFER, LOG_MEDIUM);
-    #ifdef DRV8263H 
-        PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 0);
-        PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, pwm_dc);
-    #else
-        PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100 - pwm_dc);
-        PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100);
-    #endif
+    Log("RIGHT VAL", MSG_BUFFER, LOG_HIGH);
+    PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100 - pwm_dc);
+    PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100);
 }
 
+// We use a single switch statement to turn solenoids on and off
+void set_note_state (int ith_finger, bool state){ 
+    // Decode solenoid to i2c command
+    switch (ith_finger)
+    {
+        case 0: 
+            mcp_move.digitalWrite(SOLENOID_R_0, state);
+            break;
+        case 1:
+            mcp_main.digitalWrite(SOLENOID_R_1, state);
+            break;
+        case 2:
+            mcp_main.digitalWrite(SOLENOID_R_2, state);
+            break;
+        case 3:
+            mcp_main.digitalWrite(SOLENOID_R_3, state);
+            break;
+        case 4:
+            mcp_main.digitalWrite(SOLENOID_R_4, state);
+            break;
+        case 5:
+            mcp_main.digitalWrite(SOLENOID_R_5, state);
+            break;
+        case 6:
+            mcp_main.digitalWrite(SOLENOID_R_6, state);
+            break;
+        case 7:
+            mcp_main.digitalWrite(SOLENOID_R_7, state);
+            break;
+        case 8:
+            mcp_main.digitalWrite(SOLENOID_R_8, state);
+            break;
+        default:
+            mcp_move.digitalWrite(SOLENOID_R_0, LOW);
+            mcp_move.digitalWrite(SOLENOID_R_1, LOW);
+            mcp_move.digitalWrite(SOLENOID_R_2, LOW);
+            mcp_move.digitalWrite(SOLENOID_R_3, LOW);
+            mcp_move.digitalWrite(SOLENOID_R_4, LOW);
+            mcp_move.digitalWrite(SOLENOID_R_5, LOW);
+            mcp_move.digitalWrite(SOLENOID_R_6, LOW);
+            mcp_move.digitalWrite(SOLENOID_R_7, LOW);
+            mcp_move.digitalWrite(SOLENOID_R_8, LOW);
+    }
+}
 
 void Log(const char* ID, const char *MSG, enum eLogLevel level) {
     if (level > GLOBAL_LOG_LEVEL) return;
@@ -499,4 +371,14 @@ void Log(const char* ID, const char *MSG, enum eLogLevel level) {
     Serial.print(ID);
     Serial.print("], ");
     Serial.println(MSG);
+}
+
+void LCD_Log(char *MSG, int line_num) {
+    if (line_num == 1) {
+        lcd.setDataAddr(LCD_Line1Start);
+    }
+    else if (line_num == 2) {
+        lcd.setDataAddr(LCD_Line2Start);
+    }
+    lcd.writeData(MSG);
 }
