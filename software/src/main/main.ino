@@ -34,7 +34,7 @@
 #define PID_LIM_MIN -1.0
 #define PID_LIM_MAX 1.0
 
-#define FINGERS_IN_EXISTENCE 12
+#define FINGERS_IN_EXISTENCE 9
 
 #define GLOBAL_LOG_LEVEL LOG_LOW
 
@@ -317,7 +317,11 @@ void set_right_PWM(int pwm_dc) {
     PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100);
 }
 
-// We use a single switch statement to turn solenoids on and off
+/*
+    We use a single switch statement to turn solenoids on and off
+    Since the mappings of finger number to address aren't linear
+    we use a case statement as a dictionary with the mappings defined in pins.h
+*/
 void set_note_state (int ith_finger, bool state){ 
     // Decode solenoid to i2c command
     switch (ith_finger)
