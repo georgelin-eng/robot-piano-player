@@ -1,17 +1,21 @@
 #include <Adafruit_MCP23X17.h>
+#include <Adafruit_NeoPixel.h>
 #include <stdio.h>
 #include <LCD1602.h>
 #include <string>
 #include "I2CScanner.h"
 #include "RP2040_PWM.h"  // PWM
 
+
 #define OUT_PIN 0     // MCP23XXX pin 
-#define BUTTON_1_PIN 14 // Pin S1 (SCK)
-#define BUTTON_2_PIN 15 // Pin S2 (MOSI)
-#define BUTTON_3_PIN 8 // Pin S3 (MISO)
+#define LED 13
+#define NEOPIX 16
+#define BUTTON_1_PIN 18 // Pin S1 (SCK)
+#define BUTTON_2_PIN 19 // Pin S2 (MOSI)
+#define BUTTON_3_PIN 20 // Pin S3 (MISO)
 #define PROX_PIN 28
-#define MOTOR_A 5  // PWM pin
-#define MOTOR_B 6  // PWM pin
+#define MOTOR_A 7  // PWM pin
+#define MOTOR_B 8  // PWM pin
 #define LCD_RS 0 // TX
 #define LCD_E 1  // RX
 #define LCD_D4 12
@@ -39,6 +43,7 @@ I2CScanner scanner;
 LCD lcd(LCD_RS, LCD_Not_Use_Port_RW, LCD_E, LCD_D7, LCD_D6, LCD_D5, LCD_D4);
 RP2040_PWM* PWM1_Instance;
 RP2040_PWM* PWM2_Instance;
+Adafruit_NeoPixel pixels(1, NEOPIX, NEO_GRB + NEO_KHZ800);
 
 int button_1_val = -1; 
 int button_2_val = -1; 
@@ -64,6 +69,7 @@ float sense_current2 = 0.0;
 char output[16];
 
 int mode = SOL_TEST_MODE; // set mode here
+int move_found = 1;
 
 // Non-blocking timer variables
 unsigned long motor_last_change = 0;
@@ -92,6 +98,13 @@ void setup() {
 
   pinMode(BUTTON_3_PIN, INPUT);
 
+  pinMode(LED, OUTPUT);
+  digitalWrite(LED, HIGH);
+
+  pixels.begin();
+  pixels.setPixelColor(0, pixels.Color(0, 150, 0));
+  pixels.show();   
+
   Serial.print("\r\nELEC 391 G1 Demo\r\n");
 
   sprintf(output, "ELEC 391 G1 Demo");
@@ -113,14 +126,14 @@ void setup() {
     if (MOVE_BOARD) {
       if (!mcp_move.begin_I2C(33)) {
         Serial.print("Error on moving board\r\n");
-        while (1);
+        move_found = 0;
       }
       Serial.print("Found moving board\r\n");
     }
 
     // configure pins
     mcp_main.pinMode(OUT_PIN, OUTPUT);
-    mcp_move.pinMode(OUT_PIN, OUTPUT);
+    if (move_found) mcp_move.pinMode(OUT_PIN, OUTPUT);
     pinMode(BUTTON_1_PIN, INPUT);
     pinMode(BUTTON_2_PIN, INPUT);
     pinMode(PROX_PIN, INPUT);
@@ -168,13 +181,13 @@ void loop() {
   if (mode == SOL_TEST_MODE) {
     button_1_val = digitalRead(BUTTON_1_PIN);
     mcp_main.digitalWrite(OUT_PIN, !button_1_val);
-    if (MOVE_BOARD) {
+    if (move_found) {
       button_2_val = digitalRead(BUTTON_2_PIN);
       mcp_move.digitalWrite(OUT_PIN, !button_2_val);
     }
 
     if (button_1_val != prev_button_1 || button_2_val != prev_button_2) {
-      if (MOVE_BOARD) sprintf(output, "Sol 1:%d Sol 13:%d", !button_1_val, !button_2_val);
+      if (move_found) sprintf(output, "Sol 1:%d Sol 13:%d", !button_1_val, !button_2_val);
       else sprintf(output, "Sol 1:%d         ", !button_1_val);
       
       lcd.setDataAddr(LCD_Line2Start);
