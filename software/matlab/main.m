@@ -6,7 +6,8 @@ DC      = 0.5;  % Duty cycle
 WnRes   = 2;    % Frequency search res
 ZetaRes = 0.05; % Damping factor search res
 TargPM  = 60;   % Target phase margin [degrees]
-Vmotor  = 12;   % DC voltage of motor
+% Vmotor  = 24;   % DC voltage of motor
+Vmotor = 12;
 
 IGNORE_TIMING_BELT = true;
 
@@ -63,12 +64,19 @@ Kp = K_out.Kp;
 Ki = K_out.Ki;
 Kd = K_out.Kd;
 
+% Kp = 0.0746;
+% Ki = 0.0033;
+% Kd = 0.0044;
+
 % ---------- TESTING SOFT RAMP ----------
 % testbench;
 
 % ENCODER PARAMETERS
-ramp_time = 0.1;
-yd = 0.0922*2;
+% ramp_time = 0.1;
+% yd = 0.0922*2;
+% yd = 0.24;
+% yd = 0.12;
+yd = 0.04;
 CPR = 14; % counts per revolution
 encoder_freq = 20 * 1e3;
 T_encoder = 1/encoder_freq;
