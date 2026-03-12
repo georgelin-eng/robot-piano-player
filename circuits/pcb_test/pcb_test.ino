@@ -32,7 +32,6 @@
 #define MOTOR_TEST_MODE 3 // tests motor - left and right every MOTOR_DELAY ms
 #define CURRENT_SENSE_MODE 4 // test motor and print value of the current sense on the screen
 
-#define MOVE_BOARD 1 // 1 if connected
 #define PWM_FREQ 20000 // 20KHz
 #define MOTOR_DELAY 1000 // 1s
 
