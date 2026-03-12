@@ -3,8 +3,8 @@
 
 #define ENCA_pin 24
 #define ENCB_pin 25
-#define PWM1_pin  6
-#define PWM2_pin  5
+#define PWM1_pin  8
+#define PWM2_pin  7
 
 #define PROX_SENSE1 28
 #define PROX_SENSE2 29
@@ -16,6 +16,8 @@
 #define LCD_D7 9
 #define CURRENT_S1 26   // A0 current sense 1
 #define CURRENT_S2 27   //  A1 current sense 2
+
+// ----------- I2C ADDRESSES -----------
 
 #define SOLENOID_L_1 0 
 #define SOLENOID_L_2 1

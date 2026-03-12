@@ -72,7 +72,7 @@ Kd = K_out.Kd;
 % testbench;
 
 % ENCODER PARAMETERS
-% ramp_time = 0.1;
+ramp_time = 0.1;
 % yd = 0.0922*2;
 % yd = 0.24;
 % yd = 0.12;

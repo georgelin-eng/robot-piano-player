@@ -1,7 +1,8 @@
 #include <stdio.h>             // Standard IO
 #include "RP2040_PWM.h"        // PWM
 #include "pins.h"              // pin to variable mappings
-#include "commands.h"          // command table
+// #include "commands.h"          // command table
+#include "cust_commands.h"        // command table
 #include "peripherals.h"       // ISRs for interacting with peripherals
 #include "PID.h"               // PID functions
 #include "logging.h"           // logging functions
@@ -14,29 +15,36 @@
 
 // ----------- DEFINITIONS --------------
 
-#define RAD_PER_PULSE 0.0981747704247  // 2pi / 64.
+#define RAD_PER_PULSE 0.0981747704247*2// 2pi / 64.
 #define KJT 0.00097000000000000005055  // joint-to-task space: 1:10 gearbox + 17.4mm diameter pulley 
 #define KTJ 1030.9278350515462535      // task-to-joint space
 
-#define POS_ERR_THRS   (3 * 0.001)     // 3mm precision
+#define POS_ERR_THRS   (10 /1000.0)     // 3mm precision
 #define ANGLE_ERR_THRS (POS_ERR_THRS * KTJ)
 
 #define PWM_FREQ 20000 // 20KHz
 #define PID_CONTROL_FREQ 80.0
-#define PID_CONTROL_INTERVAL (1 / PID_CONTROL_FREQ)
+// #define PID_CONTROL_INTERVAL (1 / PID_CONTROL_FREQ)
+#define PID_CONTROL_INTERVAL 0.0125
+#define TARGET_HOME_SPEED 3.0 // cm per second
 
 // PID parameters
-#define PID_KP 0.0746
-#define PID_KI 0.0033
-#define PID_KD 0.0044
+#define K0 0.6
+
+#define PID_KP (0.0567 * K0) * 0.3
+#define PID_KI (0.00067091 * K0)
+#define PID_KD (0.0011 * K0) 
 #define PID_KAW 0.01 // Anti-integral windup gain (WIP)
 #define PID_BETA 0.2759
+#define PID_LIM_MIN_INT -0.2
+#define PID_LIM_MAX_INT 0.2
 #define PID_LIM_MIN -1.0
 #define PID_LIM_MAX 1.0
+#define PID_STICTION 0.05 // feedforward control for stiction (WIP)
 
 #define FINGERS_IN_EXISTENCE 9
 
-#define GLOBAL_LOG_LEVEL LOG_LOW
+#define GLOBAL_LOG_LEVEL LOG_HIGH
 
 static char MSG_BUFFER[64]; // global message buffer for serial logging
 static char LCD_BUFFER[16]; // LCD buffer
@@ -73,6 +81,7 @@ enum eFSM_STATE {
     RUN,
     PAUSE, 
     ERROR,
+    DONE,
     POWERDOWN
 };
 
@@ -82,12 +91,9 @@ eFSM_STATE state;
 
 void setup() {
     pinMode(A0, INPUT); // current_sense_i
-    pinMode(24, INPUT); // ENCA_i
-    pinMode(25, INPUT); // ENCB_ic:\Users\flipa\OneDrive - UBC\University\Course Materials\3rd year\ELEC 391\robot-piano-player\circuits\pcb_test\pcb_test.ino
+    pinMode(ENCA_pin, INPUT); // ENCA
+    pinMode(ENCB_pin, INPUT); // ENCB
     pinMode(A3, OUTPUT); // PWM_o
-    pinMode(4, INPUT); // prox_sens_i
-    pinMode(5, OUTPUT); // fault_detected_n
-    pinMode(6, OUTPUT); // PWM_dir_o
     pinMode(PROX_SENSE1, INPUT); // Proximity sensor1
     pinMode(PROX_SENSE2, INPUT); // Proximity sensor2
 
@@ -109,7 +115,10 @@ void setup() {
     PID.beta = PID_BETA;
     PID.limMin = PID_LIM_MIN;
     PID.limMax = PID_LIM_MAX;
+    PID.limMaxInt = PID_LIM_MIN_INT;
+    PID.limMinInt = PID_LIM_MAX_INT;
     PID.control_interval = PID_CONTROL_INTERVAL;
+    PID.stiction = PID_STICTION;
 
     state = IDLE;
 
@@ -127,7 +136,7 @@ void setup() {
       Serial.print("Error on main board\r\n");
       while (1);
     }
-        Serial.print("Found moving board\r\n");
+    Serial.print("Found moving board\r\n");
 }
 
 
@@ -151,6 +160,8 @@ void loop() {
     static uint16_t current_solenoid;
     static uint16_t wanted_position;
 
+    static double speed_cmps;
+    static int pwm_dc = 0;
 
     // TODO: Might need gain scheduling for left vs right side response
     // Linear interpolation of PID not needed. Can use basic piecewaise gain schedule
@@ -164,23 +175,46 @@ void loop() {
             LCD_Log(LCD_BUFFER, 1);
             delay(500);
 
+            pwm_dc = 0;
             state = HOME;
 
             break;
         case(HOME):
-            set_left_PWM(12); // TODO: Should ramp up to slow speed
-
-            // Use PID controller to get speed measurements (derivative of position)
             measured_rad = pulseCount * RAD_PER_PULSE;
             PIDController_Measure(&PID, measured_rad);
+
+            speed_cmps = PID.d_measured * KJT * 100.0;
+
+            // ramp up speed slowly. Just use if statement based control instead of tuning a PID control loop on speed
+            if (real_abs(speed_cmps) < TARGET_HOME_SPEED) {
+                pwm_dc = pwm_dc + 1;
+
+                if (pwm_dc >= 20) {
+                    pwm_dc = 20;
+                }
+            } else if (real_abs(speed_cmps) > TARGET_HOME_SPEED) {
+                pwm_dc = pwm_dc - 1;
+
+                if (pwm_dc < 0) {
+                    pwm_dc = 0;
+                }
+            }
+
+            // set_left_PWM(12); 
+            set_left_PWM(pwm_dc);
+
+            delay(10);
+
+            // Use PID controller to get speed measurements (derivative of position)
             
-            sprintf(LCD_BUFFER, "HOMING");
+            sprintf(LCD_BUFFER, "HOME, dc=%0d", pwm_dc);
             LCD_Log(LCD_BUFFER, 1);
-            sprintf(LCD_BUFFER, "p1=%0d, w=%0.2f", digitalRead(PROX_SENSE1), PID.d_measured);
+            sprintf(LCD_BUFFER, "rad=%0.2f, v=%0.2f", measured_rad, speed_cmps);
             LCD_Log(LCD_BUFFER, 2);
             
             if (digitalRead(PROX_SENSE1) == 0) {
                 state = RUN_INIT;
+                pulseCount = 0; // Once we are finished homing set this position as 0
             }
 
             break;
@@ -226,27 +260,44 @@ void loop() {
             action_start_time = schedule[command_idx].start_time;
             action_end_time   = schedule[command_idx].end_time;
 
+            if (command_idx == SCHEDULE_LENGTH - 1) {
+                lcd.setDataAddr(LCD_Line1Start);
+                lcd.clear();    
+                lcd.setDataAddr(LCD_Line2Start);
+                lcd.clear();    
+                state = DONE;
+            }
+
             // PID loop
             if (action_type == RIGHT_MOVE){
                 sprintf(LCD_BUFFER, "%0d: R_MOVE", command_idx);
                 LCD_Log(LCD_BUFFER, 1);
 
-                if(micros() - prev_pid_time  >= PID_CONTROL_INTERVAL*1e6){
-                    prev_pid_time = micros();
+                if(millis() - prev_pid_time  >= PID_CONTROL_INTERVAL*1e3){
+                    prev_pid_time = millis();
 
-                    wanted_position = schedule[command_idx].solenoid_or_position;
-                    wanted_rad = wanted_position * KTJ;
+                    // wanted_position = schedule[command_idx].solenoid_or_position * 1.0 * 1e-3;
+                    wanted_rad = schedule[command_idx].solenoid_or_position * KTJ/1000.0;
+                    // wanted_rad = wanted_position * KTJ;
 
                     measured_rad = pulseCount * RAD_PER_PULSE;
 
                     pid_output = PIDController_Update(&PID, wanted_rad, measured_rad);
                     set_PWM(pid_output);
 
-                    sprintf(LCD_BUFFER, "%yd=0.2f: ya=%0.2f", wanted_rad, measured_rad);
+                    sprintf(LCD_BUFFER, "yd=%0.1f, ya=%0.1f", wanted_rad, measured_rad);
                     LCD_Log(LCD_BUFFER, 2);
 
-                    if (PID.error < ANGLE_ERR_THRS && song_elapsed_time > action_end_time) {
+                    // sprintf(LCD_BUFFER, "p=%0.2f", PID.proportional);
+                    // LCD_Log(LCD_BUFFER, 1);  
+
+                    // sprintf(LCD_BUFFER, "i=%0.2f d=%0.2f", PID.integrator, PID.differentiator);
+                    // LCD_Log(LCD_BUFFER, 2);  
+
+                    if (real_abs(PID.error) < ANGLE_ERR_THRS && song_elapsed_time > action_end_time) {
                         command_idx++;
+                        PIDController_Init(&PID);
+                        set_PWM(0);
                     }
                 }
             }
@@ -275,7 +326,20 @@ void loop() {
             }
         
             break;
+        case(DONE):
+            set_left_PWM(0);
+            set_right_PWM(0);
 
+            measured_rad = pulseCount * RAD_PER_PULSE;
+
+            sprintf(LCD_BUFFER, "DONE             ");
+            LCD_Log(LCD_BUFFER, 1);
+
+            sprintf(LCD_BUFFER, "ya=%0.1f       ", measured_rad);
+            LCD_Log(LCD_BUFFER, 2);
+
+
+            break;
         case(ERROR):
             set_left_PWM(0);
             set_right_PWM(0);
@@ -297,6 +361,9 @@ void loop() {
 // ------------------------ F U N C T I O N S    B E G I N ------------------------
 
 void set_PWM(float output) {
+    sprintf(MSG_BUFFER, "output= %0.2f", output);
+    Log("PWM", MSG_BUFFER, LOG_HIGH);
+
     int pwm_dc = (int) (output * 100);
 
     if (pwm_dc > 0) set_right_PWM(pwm_dc);
@@ -308,6 +375,7 @@ void set_left_PWM(int pwm_dc) {
     Log("LEFT VAL", MSG_BUFFER, LOG_HIGH);
     PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100);
     PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100 - pwm_dc);
+
 }
 
 void set_right_PWM(int pwm_dc) {
@@ -315,6 +383,7 @@ void set_right_PWM(int pwm_dc) {
     Log("RIGHT VAL", MSG_BUFFER, LOG_HIGH);
     PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100 - pwm_dc);
     PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100);
+
 }
 
 /*
@@ -323,7 +392,10 @@ void set_right_PWM(int pwm_dc) {
     we use a case statement as a dictionary with the mappings defined in pins.h
 */
 void set_note_state (int ith_finger, bool state){ 
+    return; // TEMP: immediate return
+
     // Decode solenoid to i2c command
+
     switch (ith_finger)
     {
         case 0: 
@@ -385,4 +457,12 @@ void LCD_Log(char *MSG, int line_num) {
         lcd.setDataAddr(LCD_Line2Start);
     }
     lcd.writeData(MSG);
+}
+
+double real_abs (double x){
+    if (x > 0) {
+        return x;
+    } else {
+        return -x;
+    }
 }

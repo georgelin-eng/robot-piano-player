@@ -12,6 +12,9 @@ typedef struct {
 	// Anti-windup gain
 	float Kaw;
 
+	// Feedforward term to handle stiction
+	float stiction;
+
 	// 1st order IIR derivative filter coeff.
 	float beta;
 
@@ -33,6 +36,10 @@ typedef struct {
 	float d_error_filt;			
 	float d_measured;  // to get speed measurements
 
+	float proportional;
+	float integrator;
+	float differentiator;
+
 	/* Controller output */
 	float out;
 
@@ -44,7 +51,7 @@ typedef struct {
 
 void PIDController_Init(PIDController *pid) {
 
-	pid->out = 0.0f;
+		pid->out = 0.0f;
     pid->sum_error = 0.0f;
     pid->prev_error = 0.0f;
     pid->d_error_filt = 0.0f;
@@ -74,13 +81,15 @@ float PIDController_Update(PIDController *pid, float setpoint, float measurement
 	*/
 
     // pid->sum_error += (error + pid->Kaw * (pid->limMax - pid->out))* pid->control_interval;
-    pid->sum_error += error * pid->control_interval;
+
+		// trapezoidal integration. 0.5 * (x[n] + x[n - 1]) * dT
+    pid->sum_error = pid->sum_error * 0.5 * (error + pid->prev_error) * pid->control_interval;
 
 	/*
 	* Derivative (band-limited differentiator)
 	*/
-    d_error = (error - pid->prev_error) / pid->control_interval;
-    // pid->d_error_filt = (1 - pid->beta)*pid->d_error_filt + (pid->beta) * d_error;
+	// d_error = (error - pid->prev_error) / pid->control_interval;
+	pid->d_error_filt = (1 - pid->beta)*pid->d_error_filt + (pid->beta) * d_error;
 	pid->d_error_filt = d_error;
 
 	/*
@@ -91,23 +100,47 @@ float PIDController_Update(PIDController *pid, float setpoint, float measurement
 
     // Stiction mangement
 
-    pid->out = proportional + integrator + differentiator;
+	// Integrator mangement:
+	// if (integrator > pid->limMaxInt) {
+	// 	pid->sum_error = pid->limMaxInt / pid->Ki;
+	// } else if (integrator < pid->limMinInt) {
+	// 	pid->sum_error = pid->limMinInt / pid->Ki;
+	// }
 
-    if (pid->out > pid->limMax) {
+	// derivative limits
+	if (differentiator > 0.2) {
+		differentiator = 0.2;
+	} else if (differentiator < -0.2) {
+		differentiator = -0.2;
+	}
 
-        pid->out = pid->limMax;
+	pid->out = proportional + integrator + differentiator;
 
-    } else if (pid->out < pid->limMin) {
+	// Handling stiction if the PID output is too low. Idea is this acts as a feedforward path
+	if (pid->out < pid->stiction && pid->out > 0) { // positive case
+		pid->out = pid->out + pid->stiction;
+	}
+	else if (pid->out > -pid->stiction && pid->out < 0) { // negative case
+		pid->out = pid->out - pid->stiction;
+	}
 
-        pid->out = pid->limMin;
+	if (pid->out > pid->limMax) {
+		pid->out = pid->limMax;
 
-    }
+	} else if (pid->out < pid->limMin) {
 
-    pid->prev_error       = error;
+			pid->out = pid->limMin;
+	}
+
+	pid->proportional     = proportional;
+	pid->integrator       = integrator;
+	pid->differentiator   = differentiator;
+
+	pid->prev_error       = error;
 	pid->prev_measure     = measurement;
 
 	/* Return controller output */
-    return pid->out;
+	return pid->out;
 }
 
 void PIDController_Measure(PIDController *pid, float measurement) {
