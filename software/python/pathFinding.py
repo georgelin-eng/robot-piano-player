@@ -12,7 +12,6 @@ SPLIT_POINT = 48
 # offset is distance in cm from the  left edge)
 # 'type': 'w' for White Key Finger, 'b' for Black Key Finger.
 ROBOT_FINGERS = [
-    # Example: A 5-finger comb design
     {'id': 0, 'offset': 0.0, 'type': 'w'},  
     {'id': 1, 'offset': 1.0, 'type': 'b'}, 
     {'id': 2, 'offset': 2.0, 'type': 'w'}, 
@@ -38,9 +37,10 @@ def get_note_position_cm(midi_pitch):
     }
     
     #Gives the octave (1-7)
-    octave = (midi_pitch // 12) - 1
+    pitch_diff = midi_pitch - SPLIT_POINT
+    octave = (pitch_diff // 12) - 1
     #Mod 12 gives the specific note
-    note_in_octave = midi_pitch % 12
+    note_in_octave = pitch_diff % 12
     
     index = (octave * 7) + octave_offsets[note_in_octave]
     return index * WHITE_KEY_WIDTH_CM
@@ -57,9 +57,9 @@ Add-ons
 def get_travel_time(dist_cm):
 
     if dist_cm == 0: return 0.0
-    max_velocity = 40.0 # cm/s
-    acceleration_penalty = 0.05 # time to accelerate maybe make this into a function ? Just hardcoding a time penalty for time being
-    return (dist_cm / max_velocity) + acceleration_penalty
+    max_velocity = 60.0 # cm/s
+  #  acceleration_penalty = 0.05 # time to accelerate maybe make this into a function ? Just hardcoding a time penalty for time being
+    return (dist_cm / max_velocity) #+ acceleration_penalty
 
 
 """ 
@@ -499,3 +499,84 @@ def draw_piano_header(ax, y_pos, height):
                 linewidth=1, edgecolor='black', facecolor='black', zorder=2
             )
             ax.add_patch(rect)
+            
+def generate_c_command_array(notes, times, hand_path_cm, robot_config):
+    """
+    Parses the kinematic path and outputs formatted C code 
+    containing the sequence of MOVE and PLAY commands.
+    """
+    commands = []
+    current_pos = -1.0
+    TIME_OFFSET = 0.5 # Same offset used in plotting
+    
+    for i in range(len(times)):
+        t = times[i]
+        target_pos = hand_path_cm[i]
+        
+        # GENERATE MOVE COMMAND
+        if target_pos != current_pos:
+            if i == 0:
+                # First move to start position
+                travel_duration = get_travel_time(target_pos)
+                departure = max(0.0, (t + TIME_OFFSET) - travel_duration)
+            else:
+                # Calculate required departure based on physics
+                dist = abs(target_pos - current_pos)
+                travel_duration = get_travel_time(dist)
+                ideal_departure = (t + TIME_OFFSET) - travel_duration
+                actual_departure = max(times[i-1] + TIME_OFFSET, ideal_departure)
+                departure = actual_departure
+            
+            arrival = departure + travel_duration
+            
+            # Convert cm to mm to preserve 0.5cm increments in an integer
+            pos_mm = int(target_pos * 10.0) 
+            
+            commands.append({
+                'action': 'RIGHT_MOVE',
+                'val': pos_mm,
+                'start': departure,
+                'end': arrival
+            })
+            current_pos = target_pos
+
+       #GENERATE PLAY COMMAND 
+        current_notes = [n for n in notes if abs(n.start - t) < 0.02]
+        bitmask = 0
+        max_end_time = t
+        
+        for note in current_notes:
+            note_pos = get_note_position_cm(note.pitch)
+            is_black = is_black_key(note.pitch)
+            max_end_time = max(max_end_time, note.end)
+            
+            # Find the finger id that hits this note
+            for finger in robot_config:
+                if (is_black and finger['type'] == 'w') or (not is_black and finger['type'] == 'b'):
+                    continue
+                if abs((target_pos + finger['offset']) - note_pos) <= 0.3:
+                    # Set the bit for this specific solenoid (e.g., id 2 -> 0000 0100)
+                    bitmask |= (1 << finger['id'])
+                    break
+        
+        if bitmask > 0:
+            commands.append({
+                'action': 'RIGHT_PLAY',
+                'val': bitmask,
+                'start': t + TIME_OFFSET,
+                'end': max_end_time + TIME_OFFSET
+            })
+
+
+    c_code += "#define RIGHT_MOVE 0\n"
+    c_code += "#define RIGHT_PLAY 1\n"
+    c_code += "#define LEFT_PLAY  2\n\n"
+    
+    c_code += "struct command schedule[] = {\n"
+    for cmd in commands:
+
+        c_code += f"    {{{cmd['action']}, {cmd['val']}, {cmd['start']:.3f}f, {cmd['end']:.3f}f}},\n"
+    c_code += "};\n\n"
+    c_code += f"const int SCHEDULE_LENGTH = {len(commands)};\n"
+    
+    return c_code
