@@ -71,7 +71,7 @@ LCD lcd(LCD_RS, LCD_Not_Use_Port_RW, LCD_E, LCD_D7, LCD_D6, LCD_D5, LCD_D4);
 
 // variables to be declared as volatile since they're modified in ISRs
 volatile long pulseCount = 0; 
-
+int move_found;
 
 // -------------- ENUMERATIONS --------
 
@@ -137,7 +137,40 @@ void setup() {
       Serial.print("Error on main board\r\n");
       while (1);
     }
+
+    if (!mcp_move.begin_I2C(33)) {
+        Serial.print("Error on moving board\r\n");
+        move_found = 0;
+    }
+    
+    move_found = 1;
     Serial.print("Found moving board\r\n");
+
+    // I2C pinmode setups
+
+    mcp_main.pinMode(SOLENOID_L_1, OUTPUT);
+    mcp_main.pinMode(SOLENOID_L_2, OUTPUT);
+    mcp_main.pinMode(SOLENOID_L_3, OUTPUT);
+    mcp_main.pinMode(SOLENOID_L_4, OUTPUT);
+    mcp_main.pinMode(SOLENOID_L_5, OUTPUT);
+    mcp_main.pinMode(SOLENOID_L_6, OUTPUT);
+    mcp_main.pinMode(SOLENOID_L_7, OUTPUT);
+    mcp_main.pinMode(SOLENOID_L_8, OUTPUT);
+    mcp_main.pinMode(SOLENOID_L_9, OUTPUT);
+    mcp_main.pinMode(SOLENOID_L_10, OUTPUT);
+    mcp_main.pinMode(SOLENOID_L_11, OUTPUT);
+    mcp_main.pinMode(SOLENOID_L_12, OUTPUT);
+    
+    if (move_found) {
+        mcp_move.pinMode(SOLENOID_R_0, OUTPUT);
+        mcp_move.pinMode(SOLENOID_R_1, OUTPUT);
+        mcp_move.pinMode(SOLENOID_R_2, OUTPUT);
+        mcp_move.pinMode(SOLENOID_R_3, OUTPUT);
+        mcp_move.pinMode(SOLENOID_R_4, OUTPUT);
+        mcp_move.pinMode(SOLENOID_R_5, OUTPUT);
+        mcp_move.pinMode(SOLENOID_R_6, OUTPUT);
+        mcp_move.pinMode(SOLENOID_R_7, OUTPUT);
+    }
 }
 
 
@@ -152,13 +185,12 @@ void loop() {
     static unsigned long prev_pid_time = 0;
 
     static double song_start_time = 0; // time when song starts, used to track elapsed time for command scheduling
-    static double song_elapsed_time = 0; // time elapsed since start of song
+    static double song_elapsed_time; // time elapsed since start of song
     static double action_start_time = 0; // start time of each action command
     static double action_end_time   = 0; // target end time of action
 
     static int action_type;  // TODO: Make this an enum
     static int command_idx = 0;
-    static uint16_t current_solenoid;
     static uint16_t wanted_position;
 
     static double speed_cmps;
@@ -226,6 +258,19 @@ void loop() {
             song_start_time = millis()/1000.0; // convert to seconds
             command_idx = 0;
             state = RUN;        
+
+            sprintf(LCD_BUFFER, "RUN_INIT");
+            LCD_Log(LCD_BUFFER, 1);
+
+            sprintf(LCD_BUFFER, "start=%0.1lf", song_start_time);
+            LCD_Log(LCD_BUFFER, 2);
+
+            delay(2000);
+            lcd.setDataAddr(LCD_Line1Start);
+            lcd.clear();    
+            lcd.setDataAddr(LCD_Line2Start);
+            lcd.clear();    
+
             break;
 
         case(RUN):
@@ -303,17 +348,15 @@ void loop() {
                 }
             }
             else if (action_type == RIGHT_PLAY){
-                sprintf(LCD_BUFFER, "%0d: R_PLAY      ", command_idx);
-                LCD_Log(LCD_BUFFER, 1);
-
                 // DECODE
                 uint32_t mask = schedule[command_idx].solenoid_or_position;
 
-                sprintf(LCD_BUFFER, "               ");
-                LCD_Log(LCD_BUFFER, 2);
-                sprintf(LCD_BUFFER, "m=%0d, t=%0.1f     ", mask, song_elapsed_time);
-                LCD_Log(LCD_BUFFER, 2);
+                sprintf(LCD_BUFFER, "%0d: R_P %0d", command_idx, mask);
+                LCD_Log(LCD_BUFFER, 1);
 
+                sprintf(LCD_BUFFER, "t=%0.1lf, e=%0.1lf", song_elapsed_time, action_end_time);
+                LCD_Log(LCD_BUFFER, 2);
+                
                 for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
                     if (mask & (1 << i)){
                         set_note_state(i, HIGH);
@@ -399,6 +442,7 @@ void set_right_PWM(int pwm_dc) {
 
 */
 void set_note_state (int ith_finger, bool state){ 
+    // return;
 
     // Decode solenoid to i2c command
 
