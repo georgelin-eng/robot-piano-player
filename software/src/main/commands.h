@@ -5,7 +5,7 @@
 
 struct command {
     uint8_t action;
-    uint16_t solenoid_or_position;
+    uint32_t solenoid_or_position;
     float start_time;
     float end_time;
 };

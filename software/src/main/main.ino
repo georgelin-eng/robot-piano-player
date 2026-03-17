@@ -2,7 +2,8 @@
 #include "RP2040_PWM.h"        // PWM
 #include "pins.h"              // pin to variable mappings
 // #include "commands.h"          // command table
-#include "cust_commands.h"        // command table
+// #include "cust_commands.h"        // command table
+#include "led_commands.h" 
 #include "peripherals.h"       // ISRs for interacting with peripherals
 #include "PID.h"               // PID functions
 #include "logging.h"           // logging functions
@@ -42,7 +43,7 @@
 #define PID_LIM_MAX 1.0
 #define PID_STICTION 0.05 // feedforward control for stiction (WIP)
 
-#define FINGERS_IN_EXISTENCE 9
+#define FINGERS_IN_EXISTENCE 20
 
 #define GLOBAL_LOG_LEVEL LOG_HIGH
 
@@ -302,11 +303,16 @@ void loop() {
                 }
             }
             else if (action_type == RIGHT_PLAY){
-                sprintf(LCD_BUFFER, "%0d: R_PLAY", command_idx);
+                sprintf(LCD_BUFFER, "%0d: R_PLAY      ", command_idx);
                 LCD_Log(LCD_BUFFER, 1);
 
                 // DECODE
-                uint16_t mask = schedule[command_idx].solenoid_or_position;
+                uint32_t mask = schedule[command_idx].solenoid_or_position;
+
+                sprintf(LCD_BUFFER, "               ");
+                LCD_Log(LCD_BUFFER, 2);
+                sprintf(LCD_BUFFER, "m=%0d, t=%0.1f     ", mask, song_elapsed_time);
+                LCD_Log(LCD_BUFFER, 2);
 
                 for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
                     if (mask & (1 << i)){
@@ -390,53 +396,119 @@ void set_right_PWM(int pwm_dc) {
     We use a single switch statement to turn solenoids on and off
     Since the mappings of finger number to address aren't linear
     we use a case statement as a dictionary with the mappings defined in pins.h
+
 */
 void set_note_state (int ith_finger, bool state){ 
-    return; // TEMP: immediate return
 
     // Decode solenoid to i2c command
 
-    switch (ith_finger)
-    {
-        case 0: 
-            mcp_move.digitalWrite(SOLENOID_R_0, state);
-            break;
-        case 1:
-            mcp_main.digitalWrite(SOLENOID_R_1, state);
-            break;
-        case 2:
-            mcp_main.digitalWrite(SOLENOID_R_2, state);
-            break;
-        case 3:
-            mcp_main.digitalWrite(SOLENOID_R_3, state);
-            break;
-        case 4:
-            mcp_main.digitalWrite(SOLENOID_R_4, state);
-            break;
-        case 5:
-            mcp_main.digitalWrite(SOLENOID_R_5, state);
-            break;
-        case 6:
-            mcp_main.digitalWrite(SOLENOID_R_6, state);
-            break;
-        case 7:
-            mcp_main.digitalWrite(SOLENOID_R_7, state);
-            break;
-        case 8:
-            mcp_main.digitalWrite(SOLENOID_R_8, state);
-            break;
-        default:
-            mcp_move.digitalWrite(SOLENOID_R_0, LOW);
-            mcp_move.digitalWrite(SOLENOID_R_1, LOW);
-            mcp_move.digitalWrite(SOLENOID_R_2, LOW);
-            mcp_move.digitalWrite(SOLENOID_R_3, LOW);
-            mcp_move.digitalWrite(SOLENOID_R_4, LOW);
-            mcp_move.digitalWrite(SOLENOID_R_5, LOW);
-            mcp_move.digitalWrite(SOLENOID_R_6, LOW);
-            mcp_move.digitalWrite(SOLENOID_R_7, LOW);
-            mcp_move.digitalWrite(SOLENOID_R_8, LOW);
+    // ----------- LEFT HAND FINGERS -----------
+
+    /*
+        We separate left and right by ith finger for each side with an 
+        offset on right hand parsing. To make sure that each side
+        doesn't get reset when parsing the other, we use an if statement
+        to separate this logic so the default doesn't get hit. 
+    */
+    if (ith_finger <= 11) {
+        switch (ith_finger)
+        {
+            case 0: 
+                mcp_main.digitalWrite(SOLENOID_L_1, state);
+                break;
+            case 1:
+                mcp_main.digitalWrite(SOLENOID_L_2, state);
+                break;
+            case 2:
+                mcp_main.digitalWrite(SOLENOID_L_3, state);
+                break;
+            case 3:
+                mcp_main.digitalWrite(SOLENOID_L_4, state);
+                break;
+            case 4:
+                mcp_main.digitalWrite(SOLENOID_L_5, state);
+                break;
+            case 5:
+                mcp_main.digitalWrite(SOLENOID_L_6, state);
+                break;
+            case 6:
+                mcp_main.digitalWrite(SOLENOID_L_7, state);
+                break;
+            case 7:
+                mcp_main.digitalWrite(SOLENOID_L_8, state);
+                break;
+            case 8:
+                mcp_main.digitalWrite(SOLENOID_L_9, state);
+                break;
+            case 9:
+                mcp_main.digitalWrite(SOLENOID_L_10, state);
+                break;
+            case 10:
+                mcp_main.digitalWrite(SOLENOID_L_11, state);
+                break;
+            case 11:
+                mcp_main.digitalWrite(SOLENOID_L_12, state);
+                break;
+            default:
+                mcp_main.digitalWrite(SOLENOID_L_1,  LOW);
+                mcp_main.digitalWrite(SOLENOID_L_2,  LOW);
+                mcp_main.digitalWrite(SOLENOID_L_3,  LOW);
+                mcp_main.digitalWrite(SOLENOID_L_4,  LOW);
+                mcp_main.digitalWrite(SOLENOID_L_5,  LOW);
+                mcp_main.digitalWrite(SOLENOID_L_6,  LOW);
+                mcp_main.digitalWrite(SOLENOID_L_7,  LOW);
+                mcp_main.digitalWrite(SOLENOID_L_8,  LOW);
+                mcp_main.digitalWrite(SOLENOID_L_9,  LOW);
+                mcp_main.digitalWrite(SOLENOID_L_10, LOW);
+                mcp_main.digitalWrite(SOLENOID_L_11, LOW);
+                mcp_main.digitalWrite(SOLENOID_L_12, LOW);
+        }
+    }
+    else {
+    // ----------- RIGHT HAND FINGERS -----------
+        switch (ith_finger - 12)
+        {
+            case 0: 
+                mcp_move.digitalWrite(SOLENOID_R_0, state);
+                break;
+            case 1:
+                mcp_move.digitalWrite(SOLENOID_R_1, state);
+                break;
+            case 2:
+                mcp_move.digitalWrite(SOLENOID_R_2, state);
+                break;
+            case 3:
+                mcp_move.digitalWrite(SOLENOID_R_3, state);
+                break;
+            case 4:
+                mcp_move.digitalWrite(SOLENOID_R_4, state);
+                break;
+            case 5:
+                mcp_move.digitalWrite(SOLENOID_R_5, state);
+                break;
+            case 6:
+                mcp_move.digitalWrite(SOLENOID_R_6, state);
+                break;
+            case 7:
+                mcp_move.digitalWrite(SOLENOID_R_7, state);
+                break;
+            case 8:
+                mcp_move.digitalWrite(SOLENOID_R_8, state);
+                break;
+            default:
+                mcp_move.digitalWrite(SOLENOID_R_0, LOW);
+                mcp_move.digitalWrite(SOLENOID_R_1, LOW);
+                mcp_move.digitalWrite(SOLENOID_R_2, LOW);
+                mcp_move.digitalWrite(SOLENOID_R_3, LOW);
+                mcp_move.digitalWrite(SOLENOID_R_4, LOW);
+                mcp_move.digitalWrite(SOLENOID_R_5, LOW);
+                mcp_move.digitalWrite(SOLENOID_R_6, LOW);
+                mcp_move.digitalWrite(SOLENOID_R_7, LOW);
+                mcp_move.digitalWrite(SOLENOID_R_8, LOW);
+        }
     }
 }
+
 
 void Log(const char* ID, const char *MSG, enum eLogLevel level) {
     if (level > GLOBAL_LOG_LEVEL) return;
