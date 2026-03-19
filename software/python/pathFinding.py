@@ -7,6 +7,7 @@ WHITE_KEY_WIDTH_CM = 2.0
 HIT_TOLERANCE_CM = 0.3 
 
 # RH - LF Split
+ORIGIN_MIDI_PITCH = 48
 SPLIT_POINT = 48
 
 # offset is distance in cm from the  left edge)
@@ -15,9 +16,26 @@ ROBOT_FINGERS = [
     {'id': 0, 'offset': 0.0, 'type': 'w'},  
     {'id': 1, 'offset': 1.0, 'type': 'b'}, 
     {'id': 2, 'offset': 2.0, 'type': 'w'}, 
-    {'id': 3, 'offset': 3.0, 'type': 'b'},  
-    {'id': 4, 'offset': 4.0, 'type': 'w'},
+  #  {'id': 3, 'offset': 3.0, 'type': 'b'},  
+   #{'id': 4, 'offset': 4.0, 'type': 'w'},
 ]
+
+LEFT_FINGERS = {
+    36: 0,  # C2
+    37: 1,  # C#2 / Db2
+    38: 2,  # D2
+    39: 3,  # D#2 / Eb2
+    40: 4,  # E2
+    41: 5,  # F2
+    42: 6,  # F#2 / Gb2
+    43: 7,  # G2
+    44: 8,  # G#2 / Ab2
+    45: 9,  # A2
+    46: 10, # A#2 / Bb2
+    47: 11  # B2
+}
+
+
 
 def is_black_key(midi_pitch):
     """Returns True if the MIDI pitch corresponds to a black key."""
@@ -37,8 +55,8 @@ def get_note_position_cm(midi_pitch):
     }
     
     #Gives the octave (1-7)
-    pitch_diff = midi_pitch - SPLIT_POINT
-    octave = (pitch_diff // 12) - 1
+    pitch_diff = midi_pitch - ORIGIN_MIDI_PITCH
+    octave = (pitch_diff // 12)
     #Mod 12 gives the specific note
     note_in_octave = pitch_diff % 12
     
@@ -204,7 +222,16 @@ def find_best_time_path(notes):
         
         prev_layer = layers[i-1]
         
-        # If impossible chord, stay in place (spans too wide) same as before might want to rework this
+        if not candidates and len(current_chord) > 1:
+            salvaged_chord = current_chord.copy()
+            
+            #keep dropping the lowest note (index 0) until the remaining 
+            #notes fit within the physical stretch of the active fingers.
+            #This is to prioritize melody
+            while not candidates and len(salvaged_chord) > 1:
+                salvaged_chord.pop(0) 
+                candidates = get_valid_hand_positions(salvaged_chord)
+                
         if not candidates:
             layers.append(prev_layer)
             path_traceback.append({k:k for k in prev_layer})
@@ -322,261 +349,212 @@ def print_finger_assignments(times, path_cm, notes):
                     break
             
             print(f"{t:<8.2f} | {hand_cm:<10.2f} | {p:<6} | {note_type:<6} | Finger {assigned_id} ({assigned_type})")
-        
+            
+def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm, right_config, left_config):
+    #  BUILD THE MASTER TIMELINE
+    # Combine all notes and extract every unique start time in the whole song
+    all_notes = left_notes + right_notes
+    master_times = sorted(list(set([n.start for n in all_notes])))
     
+    # dictionary to instantly look up where the right hand should be at any given right-hand note time
+    right_pos_map = {round(t, 3): pos for t, pos in zip(right_times, right_path_cm)}
     
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-import collections
-
-VISUAL_WHITE_KEY_WIDTH = 2.0
-VISUAL_BLACK_KEY_WIDTH = 1.2
-PIANO_HEADER_HEIGHT = 0.5
-
-
-# --- PLOTTING ---
-def plot_precise_movement_schedule(notes, times, hand_path_cm, robot_config):
-    """
-    Visualizes the EXACT moment the robot must leave one note to catch the next.
-    Splits the path into 'Hold' phases and 'Move' phases.
-    Tracks the main carriage center for a clean, readable motor schedule.
-    """
-    if not times:
-        print("No path data to plot.")
-        return
-
-    fig, ax = plt.subplots(figsize=(16, 12))
-    ax.invert_yaxis()
-    
-    # Offset visualization so it doesn't overlap the header
+    commands = []
+    current_pos = -1.0 # Unknown starting position
     TIME_OFFSET = 0.5 
     
-    # Setup Axis
-    # 1.5 seconds of extra padding to the bottom so the final note isn't cut off
-    max_time = max(times)
-    ax.set_ylim(max_time + TIME_OFFSET + 1.5, -0.8) 
-    
-    ax.set_ylabel("Time (seconds)", fontsize=12)
-    ax.set_xlabel("Rail Position (cm)", fontsize=12)
-    ax.set_title("Motor Schedule: Center of Hand Movement", fontsize=14)
-    
-    # --- 1. DRAW PIANO HEADER ---
-    draw_piano_header(ax, 0, PIANO_HEADER_HEIGHT)
-    
-    # Track labels so we don't clutter the legend
-    added_labels = set()
-    def get_label(name):
-        if name not in added_labels:
-            added_labels.add(name)
-            return name
-        return ""
-
-    # --- 2. CALCULATE & DRAW TRAJECTORIES ---
-    for i in range(len(times) - 1):
-        curr_time = times[i] + TIME_OFFSET
-        curr_pos = hand_path_cm[i]
+    for t in master_times:
+        rounded_t = round(t, 3)
         
-        next_time = times[i+1] + TIME_OFFSET
-        next_pos = hand_path_cm[i+1]
-        
-        dist = abs(next_pos - curr_pos)
-        travel_duration = get_travel_time(dist)
-        
-        ideal_departure = next_time - travel_duration
-        
-        # --- THE REALITY CHECK ---
-        if ideal_departure < curr_time:
-            actual_departure = curr_time
-            actual_arrival = curr_time + travel_duration
-            is_late = True
-        else:
-            actual_departure = ideal_departure
-            actual_arrival = next_time 
-            is_late = False
-
-        # --- PLOT MAIN CARRIAGE (Center Anchor) ---
-        # Segment 1: The Hold
-        ax.plot([curr_pos, curr_pos], [curr_time, actual_departure], 
-                color='black', linewidth=4, solid_capstyle='round', 
-                label=get_label('Carriage Center (Sustain)'))
-        
-        # Segment 2: The Move
-        if dist > 0:
-            move_color = 'red' if is_late else '#00aa00'
-            style = '--' if is_late else ':'
+        # RIGHT HAND MOVEMENT 
+        # Did the pathfinding algorithm say the right hand plays a note here?
+        if rounded_t in right_pos_map:
+            target_pos = right_pos_map[rounded_t]
             
-            ax.plot([curr_pos, next_pos], [actual_departure, actual_arrival], 
-                    color=move_color, linestyle=style, linewidth=2,
-                    label=get_label('Travel (Late)' if is_late else 'Travel (On Time)'))
-            
-            marker_style = 'x' if is_late else 'v' 
-            ax.scatter([curr_pos], [actual_departure], 
-                       color='darkorange' if not is_late else 'red', 
-                       marker=marker_style, s=80, zorder=10,
-                       label=get_label('Departure Trigger'))
-
-            if is_late:
-                 ax.scatter([next_pos], [actual_arrival], color='red', marker='o', s=40, zorder=10)
-
-    # --- ADD THE FINAL NOTE HOLD ---
-    if len(times) > 0:
-        last_time = times[-1] + TIME_OFFSET
-        last_pos = hand_path_cm[-1]
-        
-        # Final Carriage Hold
-        ax.plot([last_pos, last_pos], [last_time, last_time + 0.5], 
-                color='black', linewidth=4, solid_capstyle='round')
-
-    # --- 3. DRAW NOTES & FINGER HITS (Background Context) ---
-    for i, t in enumerate(times):
-        c_pos = hand_path_cm[i]
-        visual_t = t + TIME_OFFSET
-        
-        current_notes = [n for n in notes if abs(n.start - t) < 0.02]
-        
-        for note in current_notes:
-            note_pos = get_note_position_cm(note.pitch)
-            is_black = is_black_key(note.pitch)
-            duration = max(0.1, note.end - note.start)
-            
-            width = VISUAL_BLACK_KEY_WIDTH if is_black else VISUAL_WHITE_KEY_WIDTH
-            rect = patches.Rectangle(
-                (note_pos - width/2, visual_t), width, duration, 
-                linewidth=1, edgecolor='#555', 
-                facecolor='white' if not is_black else '#444', alpha=0.4
-            )
-            ax.add_patch(rect)
-            
-            hit_finger_idx = None
-            for f_idx, finger in enumerate(robot_config):
-                if (is_black and finger['type'] == 'w') or (not is_black and finger['type'] == 'b'): continue
-                if abs((c_pos + finger['offset']) - note_pos) <= 0.3:
-                    hit_finger_idx = f_idx
-                    break
-            
-            if hit_finger_idx is not None:
-                f_offset = robot_config[hit_finger_idx]['offset']
-                ax.plot([c_pos + f_offset, note_pos], [visual_t, visual_t], 
-                        color='blue', alpha=0.3, linewidth=1)
-                ax.scatter([c_pos + f_offset], [visual_t], color='blue', s=10, alpha=0.5)
-
-    ax.grid(True, axis='y', alpha=0.3)
-    
-    # --- LEGEND UPDATES ---
-    # Moved to lower left, increased font size, added a slight background frame for readability over grid lines
-    ax.legend(loc='lower left', fontsize=14, framealpha=0.9, edgecolor='#ccc')
-    
-    plt.tight_layout()
-    plt.show()
-    
-
-def draw_piano_header(ax, y_pos, height):
-    """Draws a realistic piano keyboard along the X-axis at a specific Y-position."""
-    min_midi = 21
-    max_midi = 71
-    
-    for pitch in range(min_midi, max_midi + 1):
-        if not is_black_key(pitch):
-            pos_cm = get_note_position_cm(pitch)
-            rect = patches.Rectangle(
-                (pos_cm - VISUAL_WHITE_KEY_WIDTH/2, y_pos), 
-                VISUAL_WHITE_KEY_WIDTH, height,                 
-                linewidth=1, edgecolor='black', facecolor='white', zorder=1
-            )
-            ax.add_patch(rect)
-            
-            if (pitch % 12) == 0:
-                ax.text(pos_cm, y_pos - height*0.2, f"C{(pitch//12)-1}", 
-                        ha='center', va='top', fontsize=8, color='blue', zorder=3)
-
-    for pitch in range(min_midi, max_midi + 1):
-        if is_black_key(pitch):
-            pos_cm = get_note_position_cm(pitch)
-            black_height = height * 0.65
-            rect = patches.Rectangle(
-                (pos_cm - VISUAL_BLACK_KEY_WIDTH/2, y_pos),
-                VISUAL_BLACK_KEY_WIDTH, black_height,
-                linewidth=1, edgecolor='black', facecolor='black', zorder=2
-            )
-            ax.add_patch(rect)
-            
-def generate_c_command_array(notes, times, hand_path_cm, robot_config):
-    """
-    Parses the kinematic path and outputs formatted C code 
-    containing the sequence of MOVE and PLAY commands.
-    """
-    commands = []
-    current_pos = -1.0
-    TIME_OFFSET = 0.5 # Same offset used in plotting
-    
-    for i in range(len(times)):
-        t = times[i]
-        target_pos = hand_path_cm[i]
-        
-        # GENERATE MOVE COMMAND
-        if target_pos != current_pos:
-            if i == 0:
-                # First move to start position
-                travel_duration = get_travel_time(target_pos)
-                departure = max(0.0, (t + TIME_OFFSET) - travel_duration)
-            else:
-                # Calculate required departure based on physics
-                dist = abs(target_pos - current_pos)
+            # If so, do we need to move to get there
+            if target_pos != current_pos:
+                dist = abs(target_pos - current_pos) if current_pos >= 0 else target_pos
                 travel_duration = get_travel_time(dist)
+                
                 ideal_departure = (t + TIME_OFFSET) - travel_duration
-                actual_departure = max(times[i-1] + TIME_OFFSET, ideal_departure)
-                departure = actual_departure
-            
-            arrival = departure + travel_duration
-            
-            # Convert cm to mm to preserve 0.5cm increments in an integer
-            pos_mm = int(target_pos * 10.0) 
-            
-            commands.append({
-                'action': 'RIGHT_MOVE',
-                'val': pos_mm,
-                'start': departure,
-                'end': arrival
-            })
-            current_pos = target_pos
+                # Prevent leaving before time 0.0
+                actual_departure = max(0.0, ideal_departure) 
+                
+                commands.append({
+                    'action': 'MOVE',
+                    'val': int(target_pos * 10.0), # Convert cm to mm
+                    'start': actual_departure,
+                    'end': actual_departure + travel_duration
+                })
+                current_pos = target_pos
 
-       #GENERATE PLAY COMMAND 
-        current_notes = [n for n in notes if abs(n.start - t) < 0.02]
+        # UNIFIED PLAY COMMAND 
+        # Find every note (left or right) that strikes on this exact millisecond
+        current_active_notes = [n for n in all_notes if abs(n.start - t) < 0.02]
         bitmask = 0
         max_end_time = t
         
-        for note in current_notes:
-            note_pos = get_note_position_cm(note.pitch)
-            is_black = is_black_key(note.pitch)
+        for note in current_active_notes:
             max_end_time = max(max_end_time, note.end)
             
-            # Find the finger id that hits this note
-            for finger in robot_config:
-                if (is_black and finger['type'] == 'w') or (not is_black and finger['type'] == 'b'):
-                    continue
-                if abs((target_pos + finger['offset']) - note_pos) <= 0.3:
-                    # Set the bit for this specific solenoid (e.g., id 2 -> 0000 0100)
-                    bitmask |= (1 << finger['id'])
-                    break
+            if note.pitch < SPLIT_POINT:
+                # LEFT HAND LOGIC (Bits 0-11) 
+                if note.pitch in left_config:
+                    finger_id = left_config[note.pitch]
+                    bitmask |= (1 << finger_id)
+            else:
+                #RIGHT HAND LOGIC (Bits 12-19)
+                note_pos = get_note_position_cm(note.pitch)
+                is_black = is_black_key(note.pitch)
+                
+                for finger in right_config:
+                    if (is_black and finger['type'] == 'w') or (not is_black and finger['type'] == 'b'):
+                        continue
+                    
+                    # Does this finger line up with the note from our current position?
+                    if abs((current_pos + finger['offset']) - note_pos) <= 0.3:
+                        bitmask |= (1 << (finger['id'] + 12)) # Shift up by 12
+                        break
         
+        # If at least one finger was triggered, append the play command
         if bitmask > 0:
             commands.append({
-                'action': 'RIGHT_PLAY',
+                'action': 'PLAY',
                 'val': bitmask,
                 'start': t + TIME_OFFSET,
                 'end': max_end_time + TIME_OFFSET
             })
 
-
-    c_code += "#define RIGHT_MOVE 0\n"
-    c_code += "#define RIGHT_PLAY 1\n"
-    c_code += "#define LEFT_PLAY  2\n\n"
+    c_code = "#define MOVE 0\n"
+    c_code += "#define PLAY 1\n\n"
+    
+    c_code += "struct command {\n"
+    c_code += "    uint8_t action;\n"
+    c_code += "    int32_t val;\n"
+    c_code += "    float start_time;\n"
+    c_code += "    float end_time;\n"
+    c_code += "};\n\n"
     
     c_code += "struct command schedule[] = {\n"
     for cmd in commands:
-
         c_code += f"    {{{cmd['action']}, {cmd['val']}, {cmd['start']:.3f}f, {cmd['end']:.3f}f}},\n"
     c_code += "};\n\n"
     c_code += f"const int SCHEDULE_LENGTH = {len(commands)};\n"
     
     return c_code
+
+
+
+#AI PLOTTING
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+
+# --- VISUALIZATION CONSTANTS ---
+VISUAL_BLACK_KEY_WIDTH = 1.2
+PIANO_HEADER_HEIGHT = 0.5
+TIME_OFFSET = 0.5 
+
+def plot_robot_performance(all_notes, rh_times, rh_path_cm, right_config):
+    """
+    Plots the master timeline of the song, the static left hand, 
+    and the physical kinematic trajectory of the mobile right hand.
+    """
+    fig, ax = plt.subplots(figsize=(16, 12))
+    ax.invert_yaxis()
+    
+    # 1. Setup Axes (Dynamically size based on the song length)
+    max_t = max([n.end for n in all_notes] + (rh_times if rh_times else [0]))
+    ax.set_ylim(max_t + TIME_OFFSET + 1.0, -0.8)
+    ax.set_xlabel("Physical Position relative to C3 (cm)", fontsize=12)
+    ax.set_ylabel("Time (seconds)", fontsize=12)
+    ax.set_title("Robot Performance: Left Hand (Static) & Right Hand (Mobile)", fontsize=16, pad=20)
+
+    # 2. Draw Piano Header (From C2 to C7)
+    header_y = 0
+    # Draw White Keys First
+    for p in range(36, 97): 
+        pos = get_note_position_cm(p)
+        if not is_black_key(p):
+            ax.add_patch(patches.Rectangle((pos - WHITE_KEY_WIDTH_CM/2, header_y), WHITE_KEY_WIDTH_CM, PIANO_HEADER_HEIGHT, 
+                                           ec='black', fc='#f0f0f0', zorder=1))
+            if p % 12 == 0:
+                ax.text(pos, header_y - 0.1, f"C{(p//12)-1}", ha='center', va='top', fontsize=9, color='blue')
+                
+    # Draw Black Keys Second (So they overlay)
+    for p in range(36, 97):
+        if is_black_key(p):
+            pos = get_note_position_cm(p)
+            ax.add_patch(patches.Rectangle((pos - VISUAL_BLACK_KEY_WIDTH/2, header_y), VISUAL_BLACK_KEY_WIDTH, PIANO_HEADER_HEIGHT*0.65, 
+                                           ec='black', fc='#333333', zorder=2))
+
+    # 3. Draw the Song Notes (The Background "Synthesia" falling blocks)
+    for n in all_notes:
+        pos = get_note_position_cm(n.pitch)
+        black_key = is_black_key(n.pitch)
+        w = VISUAL_BLACK_KEY_WIDTH if black_key else WHITE_KEY_WIDTH_CM
+        
+        # Color Right Hand notes Grey/Dark Grey
+        color = '#888888' if black_key else '#dddddd'
+        
+        # Color Left Hand notes Light Blue/Dark Blue
+        if n.pitch < ORIGIN_MIDI_PITCH:
+            color = '#1f4e79' if black_key else '#5a9bd5'
+
+        ax.add_patch(patches.Rectangle((pos - w/2, n.start + TIME_OFFSET), w, max(0.05, n.end - n.start), 
+                                       ec='#999', fc=color, alpha=0.5, zorder=0))
+
+    # 4. Draw Right Hand Motor Trajectory (The solid black line)
+    if rh_times and rh_path_cm:
+        added_labels = set()
+        def label(name):
+            if name not in added_labels: added_labels.add(name); return name
+            return ""
+
+        for i in range(len(rh_times) - 1):
+            curr_t, curr_p = rh_times[i] + TIME_OFFSET, rh_path_cm[i]
+            next_t, next_p = rh_times[i+1] + TIME_OFFSET, rh_path_cm[i+1]
+            
+            # Use your custom physics simulation here
+            travel = get_travel_time(abs(next_p - curr_p))
+            ideal_dep = next_t - travel
+            
+            # Reality check: Are we late?
+            late = ideal_dep < curr_t
+            dep_t = curr_t if late else ideal_dep
+            arr_t = curr_t + travel if late else next_t
+
+            # Draw Hold
+            ax.plot([curr_p, curr_p], [curr_t, dep_t], color='black', lw=4, solid_capstyle='round', label=label('Motor Sustain'))
+            
+            # Draw Move
+            if abs(next_p - curr_p) > 0:
+                ax.plot([curr_p, next_p], [dep_t, arr_t], color='red' if late else '#00aa00', ls='--' if late else ':', lw=2, label=label('Motor Travel'))
+                ax.scatter([curr_p], [dep_t], color='darkorange' if not late else 'red', marker='v' if not late else 'x', s=80, zorder=10, label=label('Departure Trigger'))
+
+            # Draw Finger Strikes for this timestamp
+            active_notes = [n for n in all_notes if abs(n.start - (curr_t - TIME_OFFSET)) < 0.02 and n.pitch >= ORIGIN_MIDI_PITCH]
+            for n in active_notes:
+                n_pos = get_note_position_cm(n.pitch)
+                for f in right_config:
+                    if (is_black_key(n.pitch) and f['type'] == 'w') or (not is_black_key(n.pitch) and f['type'] == 'b'): continue
+                    if abs((curr_p + f['offset']) - n_pos) <= HIT_TOLERANCE_CM:
+                        ax.plot([curr_p + f['offset'], n_pos], [curr_t, curr_t], color='red', alpha=0.5, lw=2)
+                        ax.scatter([curr_p + f['offset']], [curr_t], color='red', s=30, zorder=5)
+                        break
+
+        # Final Hold
+        last_t, last_p = rh_times[-1] + TIME_OFFSET, rh_path_cm[-1]
+        ax.plot([last_p, last_p], [last_t, last_t + 0.5], color='black', lw=4, solid_capstyle='round')
+
+    # 5. Draw visual separator for the hands
+    origin_pos = get_note_position_cm(ORIGIN_MIDI_PITCH)
+    ax.axvline(x=origin_pos - WHITE_KEY_WIDTH_CM/2, color='blue', linestyle='-.', alpha=0.3)
+    
+    # Dynamic text placement based on your origin
+    ax.text(origin_pos - 12.0, 0.2, "LEFT HAND ZONE", color='blue', alpha=0.5, fontsize=14, weight='bold', ha='center')
+    ax.text(origin_pos + 12.0, 0.2, "RIGHT HAND ZONE", color='black', alpha=0.5, fontsize=14, weight='bold', ha='center')
+
+    ax.grid(True, axis='y', alpha=0.3)
+    ax.legend(loc='lower left', fontsize=12, framealpha=0.9)
+    plt.tight_layout()
+    plt.show()
