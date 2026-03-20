@@ -57,6 +57,7 @@ int prev_sval2 = -1;
 
 char output[16];
 
+<<<<<<< Updated upstream
 int mode = SOL_TEST_MODE; // set mode here
 int move_found = 1;
 
@@ -75,6 +76,10 @@ char* get_mode_name(int m) {
     default: return "Mode: Unknown";
   }
 }
+=======
+int mode = MOTOR_TEST_MODE; // set mode here
+#define MOVE_BOARD 1 // 1 if connected
+>>>>>>> Stashed changes
 
 void setup() {
   delay(5000);
@@ -91,7 +96,7 @@ void setup() {
   digitalWrite(LED, HIGH);
 
   pixels.begin();
-  pixels.setPixelColor(0, pixels.Color(0, 150, 0));
+  pixels.setPixelColor(0, pixels.Color(0, 0, 0));
   pixels.show();   
 
   Serial.print("\r\nELEC 391 G1 Demo\r\n");
@@ -112,12 +117,10 @@ void setup() {
       while (1);
     }
     Serial.print("Found main board\r\n");
-    if (MOVE_BOARD) {
-      if (!mcp_move.begin_I2C(33)) {
-        Serial.print("Error on moving board\r\n");
-        move_found = 0;
-      }
-      Serial.print("Found moving board\r\n");
+
+    if (!mcp_move.begin_I2C(33)) {
+      Serial.print("Error on moving board\r\n");
+      move_found = 0;
     }
 
     // configure pins
