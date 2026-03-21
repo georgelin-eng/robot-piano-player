@@ -19,8 +19,8 @@ RH_MAX_PITCH = 77
 # 'type': 'w' for White Key Finger, 'b' for Black Key Finger.
 ROBOT_FINGERS = [
     {'id': 0, 'offset': 6.0, 'type': 'w'},  
-    {'id': 1, 'offset': 5.0, 'type': 'b'}, 
-    {'id': 2, 'offset': 4.0, 'type': 'w'}, 
+   # {'id': 1, 'offset': 5.0, 'type': 'b'}, 
+    {'id': 1, 'offset': 2.0, 'type': 'w'}, 
   #  {'id': 3, 'offset': 3.0, 'type': 'b'},  
    #{'id': 4, 'offset': 4.0, 'type': 'w'},
 ]
@@ -416,7 +416,7 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
                 
                 commands.append({
                     'action': 'MOVE',
-                    'val': int(target_pos * 10.0), 
+                    'solenoid_or_position': int(target_pos * 10.0), 
                     'start': actual_departure,
                     'end': actual_departure + travel_duration
                 })
@@ -454,7 +454,7 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
         if bitmask > 0:
             commands.append({
                 'action': 'PLAY',
-                'val': bitmask,
+                'solenoid_or_position': bitmask,
                 'start': t + TIME_OFFSET,
                 'end': max_end_time + TIME_OFFSET
             })
@@ -465,14 +465,14 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
     c_code += f"const int INITIAL_MOTOR_POSITION_MM = {initial_setup_mm};\n\n"
     c_code += "struct command {\n"
     c_code += "    uint8_t action;\n"
-    c_code += "    int32_t val;\n"
+    c_code += "    uint32_t solenoid_or_position;\n"
     c_code += "    float start_time;\n"
     c_code += "    float end_time;\n"
     c_code += "};\n\n"
     
     c_code += "struct command schedule[] = {\n"
     for cmd in commands:
-        c_code += f"    {{{cmd['action']}, {cmd['val']}, {cmd['start']:.3f}f, {cmd['end']:.3f}f}},\n"
+        c_code += f"    {{{cmd['action']}, {cmd['solenoid_or_position']}, {cmd['start']:.3f}f, {cmd['end']:.3f}f}},\n"
     c_code += "};\n\n"
     c_code += f"const int SCHEDULE_LENGTH = {len(commands)};\n"
     
