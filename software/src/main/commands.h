@@ -1,7 +1,12 @@
 #ifndef COMMANDS_H
 #define COMMANDS_H
 
+#define MOVE 0
+#define PLAY 1
+
 #include <stdint.h> // included for uint8_t definition
+
+const int INITIAL_MOTOR_POSITION_MM = 240;
 
 struct command {
     uint8_t action;
@@ -10,67 +15,57 @@ struct command {
     float end_time;
 };
 
-#define RIGHT_MOVE 0
-#define RIGHT_PLAY 1
-#define LEFT_PLAY  2
-
-#define SCHEDULE_LENGTH = 53
-
 struct command schedule[] = {
-    {RIGHT_MOVE, 0, 0.500f, 0.500f},
-    {RIGHT_PLAY, 1, 0.500f, 0.696f},
-    {RIGHT_PLAY, 1, 0.630f, 0.696f},
-    {RIGHT_MOVE, 40, 0.694f, 0.761f},
-    {RIGHT_PLAY, 16, 0.761f, 0.826f},
-    {RIGHT_MOVE, 0, 0.825f, 0.891f},
-    {RIGHT_PLAY, 16, 0.891f, 0.957f},
-    {RIGHT_PLAY, 1, 1.022f, 1.217f},
-    {RIGHT_MOVE, 40, 1.022f, 1.088f},
-    {RIGHT_PLAY, 16, 1.087f, 1.120f},
-    {RIGHT_MOVE, 20, 1.119f, 1.152f},
-    {RIGHT_PLAY, 4, 1.152f, 1.185f},
-    {RIGHT_MOVE, 0, 1.249f, 1.283f},
-    {RIGHT_PLAY, 16, 1.283f, 1.413f},
-    {RIGHT_PLAY, 2, 1.543f, 1.739f},
-    {RIGHT_PLAY, 2, 1.674f, 1.739f},
-    {RIGHT_MOVE, 60, 1.704f, 1.804f},
-    {RIGHT_PLAY, 8, 1.804f, 1.870f},
-    {RIGHT_MOVE, 20, 1.868f, 1.935f},
-    {RIGHT_PLAY, 16, 1.935f, 2.000f},
-    {RIGHT_MOVE, 0, 2.032f, 2.065f},
-    {RIGHT_PLAY, 2, 2.065f, 2.261f},
-    {RIGHT_MOVE, 60, 2.065f, 2.165f},
-    {RIGHT_PLAY, 8, 2.130f, 2.163f},
-    {RIGHT_MOVE, 40, 2.162f, 2.196f},
-    {RIGHT_PLAY, 4, 2.196f, 2.228f},
-    {RIGHT_MOVE, 20, 2.293f, 2.326f},
-    {RIGHT_PLAY, 16, 2.326f, 2.457f},
-    {RIGHT_MOVE, 0, 2.554f, 2.587f},
-    {RIGHT_PLAY, 1, 2.587f, 2.783f},
-    {RIGHT_PLAY, 1, 2.717f, 2.783f},
-    {RIGHT_MOVE, 40, 2.781f, 2.848f},
-    {RIGHT_PLAY, 16, 2.848f, 2.913f},
-    {RIGHT_MOVE, 0, 2.912f, 2.978f},
-    {RIGHT_PLAY, 16, 2.978f, 3.043f},
-    {RIGHT_PLAY, 1, 3.109f, 3.304f},
-    {RIGHT_MOVE, 40, 3.109f, 3.175f},
-    {RIGHT_PLAY, 16, 3.174f, 3.207f},
-    {RIGHT_PLAY, 1, 3.239f, 3.272f},
-    {RIGHT_PLAY, 1, 3.370f, 3.484f},
-    {RIGHT_PLAY, 1, 3.630f, 3.696f},
-
-    {RIGHT_PLAY, 4, 3.696f, 3.728f},
-    {RIGHT_PLAY, 8, 3.761f, 3.793f},
-    {RIGHT_PLAY, 8, 3.891f, 3.957f},
-    {RIGHT_PLAY, 16, 3.957f, 3.989f},
-    {RIGHT_MOVE, 60, 3.988f, 4.022f},
-    {RIGHT_PLAY, 8, 4.022f, 4.054f},
-    {RIGHT_PLAY, 8, 4.152f, 4.217f},
-    {RIGHT_PLAY, 16, 4.217f, 4.250f},
-    {RIGHT_MOVE, 80, 4.249f, 4.283f},
-    {RIGHT_PLAY, 16, 4.283f, 4.315f},
-    {RIGHT_MOVE, 0, 4.283f, 4.416f},
-    {RIGHT_PLAY, 1, 4.413f, 4.478f},
+    {PLAY, 16, 0.500f, 0.687f},
+    {MOVE, 240, 0.583f, 1.000f},
+    {PLAY, 6272, 1.000f, 1.124f},
+    {PLAY, 16, 1.500f, 1.687f},
+    {PLAY, 513, 2.000f, 2.124f},
+    {PLAY, 16, 2.500f, 2.687f},
+    {PLAY, 9218, 3.000f, 3.124f},
+    {PLAY, 16, 3.500f, 3.687f},
+    {PLAY, 513, 4.000f, 4.124f},
+    {PLAY, 16, 4.500f, 4.687f},
+    {PLAY, 6272, 5.000f, 5.124f},
+    {PLAY, 16, 5.500f, 5.687f},
+    {PLAY, 513, 6.000f, 6.124f},
+    {PLAY, 16, 6.500f, 6.687f},
+    {MOVE, 200, 6.933f, 7.000f},
+    {PLAY, 5122, 7.000f, 7.124f},
+    {PLAY, 16, 7.500f, 7.687f},
+    {PLAY, 513, 8.000f, 8.124f},
+    {PLAY, 16, 8.500f, 8.687f},
+    {MOVE, 100, 8.833f, 9.000f},
+    {PLAY, 10368, 9.000f, 9.124f},
+    {PLAY, 4096, 9.250f, 9.312f},
+    {PLAY, 8208, 9.500f, 9.687f},
+    {PLAY, 513, 10.000f, 10.124f},
+    {PLAY, 16, 10.500f, 10.687f},
+    {PLAY, 5122, 11.000f, 11.124f},
+    {MOVE, 120, 11.467f, 11.500f},
+    {PLAY, 4112, 11.500f, 11.687f},
+    {PLAY, 4096, 11.750f, 11.874f},
+    {PLAY, 4609, 12.000f, 12.124f},
+    {PLAY, 16, 12.500f, 12.687f},
+    {PLAY, 1026, 13.000f, 13.124f},
+    {MOVE, 140, 13.467f, 13.500f},
+    {PLAY, 4112, 13.500f, 13.687f},
+    {PLAY, 4096, 13.750f, 13.874f},
+    {PLAY, 4609, 14.000f, 14.124f},
+    {MOVE, 160, 14.467f, 14.500f},
+    {PLAY, 6288, 14.500f, 14.624f},
+    {MOVE, 140, 14.717f, 14.750f},
+    {PLAY, 8192, 14.750f, 14.874f},
+    {PLAY, 4625, 15.000f, 15.124f},
+    {PLAY, 8192, 15.250f, 15.374f},
+    {MOVE, 160, 15.467f, 15.500f},
+    {PLAY, 4112, 15.500f, 15.624f},
+    {PLAY, 4, 15.750f, 15.874f},
+    {PLAY, 1, 16.000f, 16.124f},
+    {PLAY, 2048, 16.250f, 16.374f},
+    {PLAY, 1024, 16.500f, 16.624f},
 };
+
+const int SCHEDULE_LENGTH = 48;
 
 #endif

@@ -1,9 +1,9 @@
 #include <stdio.h>             // Standard IO
 #include "RP2040_PWM.h"        // PWM
 #include "pins.h"              // pin to variable mappings
-// #include "commands.h"          // command table
+#include "commands.h"          // command table
 // #include "cust_commands.h"        // command table
-#include "led_commands.h" 
+// #include "led_commands.h" 
 #include "peripherals.h"       // ISRs for interacting with peripherals
 #include "PID.h"               // PID functions
 #include "logging.h"           // logging functions
@@ -20,7 +20,7 @@
 #define KJT 0.00097000000000000005055  // joint-to-task space: 1:10 gearbox + 17.4mm diameter pulley 
 #define KTJ 1030.9278350515462535      // task-to-joint space
 
-#define POS_ERR_THRS   (10 /1000.0)     // 3mm precision
+#define POS_ERR_THRS   (10 /1000.0)
 #define ANGLE_ERR_THRS (POS_ERR_THRS * KTJ)
 
 #define PWM_FREQ 20000 // 20KHz
@@ -134,12 +134,18 @@ void setup() {
   
     scanner.Scan();
     if (!mcp_main.begin_I2C(32)) {
-      Serial.print("Error on main board\r\n");
+        sprintf(LCD_BUFFER, "Error on main board");
+        LCD_Log(LCD_BUFFER, 1);
+
+         Serial.print("Error on main board\r\n");
+
       while (1);
     }
 
     if (!mcp_move.begin_I2C(33)) {
-        Serial.print("Error on moving board\r\n");
+        // Serial.print("Error on moving board\r\n");
+        sprintf(LCD_BUFFER, "Error on moving board");
+        LCD_Log(LCD_BUFFER, 2);
         move_found = 0;
     }
     
@@ -185,6 +191,7 @@ void loop() {
     static unsigned long prev_pid_time = 0;
 
     static double song_start_time = 0; // time when song starts, used to track elapsed time for command scheduling
+    static double offset = 0;
     static double song_elapsed_time; // time elapsed since start of song
     static double action_start_time = 0; // start time of each action command
     static double action_end_time   = 0; // target end time of action
@@ -213,7 +220,7 @@ void loop() {
 
             break;
         case(HOME):
-            measured_rad = pulseCount * RAD_PER_PULSE;
+            measured_rad = -pulseCount * RAD_PER_PULSE;
             PIDController_Measure(&PID, measured_rad);
 
             speed_cmps = PID.d_measured * KJT * 100.0;
@@ -234,7 +241,8 @@ void loop() {
             }
 
             // set_left_PWM(12); 
-            set_left_PWM(pwm_dc);
+            // set_left_PWM(pwm_dc);
+            set_right_PWM(pwm_dc);
 
             delay(10);
 
@@ -265,7 +273,24 @@ void loop() {
             sprintf(LCD_BUFFER, "start=%0.1lf", song_start_time);
             LCD_Log(LCD_BUFFER, 2);
 
-            delay(2000);
+            if(millis() - prev_pid_time  >= PID_CONTROL_INTERVAL*1e3){
+                prev_pid_time = millis();
+                wanted_rad = INITIAL_MOTOR_POSITION_MM * KTJ/1000.0;
+                measured_rad = -pulseCount * RAD_PER_PULSE;
+
+                pid_output = PIDController_Update(&PID, wanted_rad, measured_rad);
+                set_PWM(pid_output);
+
+                if (real_abs(PID.error) < ANGLE_ERR_THRS) {
+                    PIDController_Init(&PID);
+                    set_PWM(0);
+                }
+
+                sprintf(LCD_BUFFER, "yd=%0.1f,ya=%0.1f", wanted_rad*KJT*1000, measured_rad*KJT*1000);
+                LCD_Log(LCD_BUFFER, 1);
+            }
+
+            delay(500);
             lcd.setDataAddr(LCD_Line1Start);
             lcd.clear();    
             lcd.setDataAddr(LCD_Line2Start);
@@ -300,7 +325,7 @@ void loop() {
 
             */
             
-            song_elapsed_time = millis()/1000.0 - song_start_time;
+            song_elapsed_time = millis()/1000.0 - song_start_time - offset;
 
             action_type       = schedule[command_idx].action;
             action_start_time = schedule[command_idx].start_time;
@@ -315,39 +340,49 @@ void loop() {
             }
 
             // PID loop
-            if (action_type == RIGHT_MOVE){
-                sprintf(LCD_BUFFER, "%0d: R_MOVE", command_idx);
-                LCD_Log(LCD_BUFFER, 1);
+            if (action_type == MOVE){
+                // sprintf(LCD_BUFFER, "%0d: R_MOVE", command_idx);
+                // LCD_Log(LCD_BUFFER, 1);
 
                 if(millis() - prev_pid_time  >= PID_CONTROL_INTERVAL*1e3){
                     prev_pid_time = millis();
 
-                    // wanted_position = schedule[command_idx].solenoid_or_position * 1.0 * 1e-3;
                     wanted_rad = schedule[command_idx].solenoid_or_position * KTJ/1000.0;
-                    // wanted_rad = wanted_position * KTJ;
 
-                    measured_rad = pulseCount * RAD_PER_PULSE;
+                    measured_rad = -pulseCount * RAD_PER_PULSE;
 
                     pid_output = PIDController_Update(&PID, wanted_rad, measured_rad);
                     set_PWM(pid_output);
 
-                    sprintf(LCD_BUFFER, "yd=%0.1f, ya=%0.1f", wanted_rad, measured_rad);
+                    sprintf(LCD_BUFFER, "yd=%0.1f,ya=%0.1f", wanted_rad*KJT*1000, measured_rad*KJT*1000);
+                    LCD_Log(LCD_BUFFER, 1);
+
+                    sprintf(LCD_BUFFER, "t0=%0.1f,t1=%0.1f,ofs=%0.1f", song_elapsed_time, action_end_time, offset);
                     LCD_Log(LCD_BUFFER, 2);
 
-                    // sprintf(LCD_BUFFER, "p=%0.2f", PID.proportional);
-                    // LCD_Log(LCD_BUFFER, 1);  
+                    /*
+                    PID error being too low can result in being stuck in this loop for a long time
+                    This can cause subsequant play commands to get skipped. We fix this
+                    be keeping song_elapsed_time the same value by subtracting an offset
+                    
+                    since millis() continuously grows, we need to use it in the calculation
+                    of the offset as well. Offset should grow based on the sum of the total
+                    time delta from when the PID loop allows things to end and action end time
+                    */
+                    if (song_elapsed_time >= action_end_time) {
 
-                    // sprintf(LCD_BUFFER, "i=%0.2f d=%0.2f", PID.integrator, PID.differentiator);
-                    // LCD_Log(LCD_BUFFER, 2);  
+                        offset = (millis()/1000.0 - song_start_time) - action_end_time;
+                    }
 
-                    if (real_abs(PID.error) < ANGLE_ERR_THRS && song_elapsed_time > action_end_time) {
+                    if (real_abs(PID.error) < ANGLE_ERR_THRS && song_elapsed_time >= action_end_time) {
+                        
                         command_idx++;
                         PIDController_Init(&PID);
                         set_PWM(0);
                     }
                 }
             }
-            else if (action_type == RIGHT_PLAY){
+            else if (action_type == PLAY & (song_elapsed_time > action_start_time)){
                 // DECODE
                 uint32_t mask = schedule[command_idx].solenoid_or_position;
 
@@ -370,6 +405,7 @@ void loop() {
                     for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
                         set_note_state(i, LOW);
                     }
+
                     command_idx++;
                 }
             }
@@ -422,16 +458,16 @@ void set_PWM(float output) {
 void set_left_PWM(int pwm_dc) {
     sprintf(MSG_BUFFER, "Left PWM = %d", pwm_dc);
     Log("LEFT VAL", MSG_BUFFER, LOG_HIGH);
-    PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100);
-    PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100 - pwm_dc);
+    PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100 - pwm_dc);
+    PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100);
 
 }
 
 void set_right_PWM(int pwm_dc) {
     sprintf(MSG_BUFFER, "Right PWM = %d", pwm_dc);
     Log("RIGHT VAL", MSG_BUFFER, LOG_HIGH);
-    PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100 - pwm_dc);
-    PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100);
+    PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100);
+    PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100 - pwm_dc);
 
 }
 

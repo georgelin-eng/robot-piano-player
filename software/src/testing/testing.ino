@@ -2,7 +2,7 @@
 
 // ------------------------ S E T U P    C O D E    B E G I N ------------------------
 
-#define PIN_TO_USE 6
+#define PIN_TO_USE 9
 
 void setup() {
     pinMode(PIN_TO_USE, OUTPUT); 
