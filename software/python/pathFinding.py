@@ -10,12 +10,17 @@ HIT_TOLERANCE_CM = 0.3
 ORIGIN_MIDI_PITCH = 48
 SPLIT_POINT = 48
 
+LH_MAX_PITCH = 47
+
+RH_MIN_PITCH = 52      
+RH_MAX_PITCH = 77
+
 # offset is distance in cm from the  left edge)
 # 'type': 'w' for White Key Finger, 'b' for Black Key Finger.
 ROBOT_FINGERS = [
-    {'id': 0, 'offset': 0.0, 'type': 'w'},  
-    {'id': 1, 'offset': 1.0, 'type': 'b'}, 
-    {'id': 2, 'offset': 2.0, 'type': 'w'}, 
+    {'id': 0, 'offset': 6.0, 'type': 'w'},  
+    {'id': 1, 'offset': 5.0, 'type': 'b'}, 
+    {'id': 2, 'offset': 4.0, 'type': 'w'}, 
   #  {'id': 3, 'offset': 3.0, 'type': 'b'},  
    #{'id': 4, 'offset': 4.0, 'type': 'w'},
 ]
@@ -47,6 +52,7 @@ def is_black_key(midi_pitch):
 midi_pitch: <int> pitch of specific note
 Function used to conver pitch into cm (might need to double check this I did a general case unsure if this matches exactly the midi library)
 """
+"""
 def get_note_position_cm(midi_pitch):
     # Relative offsets from the start of the octave (C=0)
     octave_offsets = {
@@ -62,6 +68,29 @@ def get_note_position_cm(midi_pitch):
     
     index = (octave * 7) + octave_offsets[note_in_octave]
     return index * WHITE_KEY_WIDTH_CM
+    """
+    
+    
+""" Standard left-to-right piano ruler from MIDI 0."""
+def _get_absolute_position_cm(midi_pitch):
+    octave = midi_pitch // 12
+    note_in_octave = midi_pitch % 12
+    octave_offsets = {0: 0.0, 1: 0.5, 2: 1.0, 3: 1.5, 4: 2.0, 5: 3.0, 6: 3.5, 7: 4.0, 8: 4.5, 9: 5.0, 10: 5.5, 11: 6.0}
+    index = (octave * 7) + octave_offsets[note_in_octave]
+    return index * WHITE_KEY_WIDTH_CM
+
+# Find exactly where the home switch is physically located in absolute space
+RH_HOME_ABSOLUTE_CM = _get_absolute_position_cm(RH_MAX_PITCH)
+
+"""
+    New Mirrored Coordinate System:
+    0.0 cm is the far right note (RH_MAX_PITCH).
+    Moving LEFT towards lower notes INCREASES the cm value.
+"""
+def get_note_position_cm(midi_pitch):
+    
+    abs_pos = _get_absolute_position_cm(midi_pitch)
+    return RH_HOME_ABSOLUTE_CM - abs_pos
 
 
 """Basic Physics simulation to estimate time.
@@ -165,7 +194,8 @@ def find_best_time_path(notes):
         
         #Additional sort just to make sure
         #Check position 0 of each list (position_in_cm, true/false) and organize from lowest to highest
-        step_data.sort(key=lambda x: x[0])
+        step_data.sort(key=lambda x: x[0], reverse=True)
+       # step_data.sort(key=lambda x: x[0])
         if step_data:
             time_steps_data.append(step_data)
 
@@ -309,7 +339,8 @@ def find_best_time_path(notes):
             optimal_path_cm.append(curr)
             
     optimal_path_cm.reverse()
-    
+
+        
     return sorted_times, optimal_path_cm
 
 
@@ -351,6 +382,8 @@ def print_finger_assignments(times, path_cm, notes):
             print(f"{t:<8.2f} | {hand_cm:<10.2f} | {p:<6} | {note_type:<6} | Finger {assigned_id} ({assigned_type})")
             
 def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm, right_config, left_config):
+    
+    initial_setup_mm = int(right_path_cm[0] * 10.0) if right_path_cm else 0
     #  BUILD THE MASTER TIMELINE
     # Combine all notes and extract every unique start time in the whole song
     all_notes = left_notes + right_notes
@@ -371,23 +404,24 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
         if rounded_t in right_pos_map:
             target_pos = right_pos_map[rounded_t]
             
-            # If so, do we need to move to get there
+            # Since current_pos starts at the setup location, this will naturally 
+            # ignore the first note (because it's already there) and only calculate 
+            # commands for the moves that happen mid-song.
             if target_pos != current_pos:
-                dist = abs(target_pos - current_pos) if current_pos >= 0 else target_pos
+                dist = abs(target_pos - current_pos)
                 travel_duration = get_travel_time(dist)
                 
                 ideal_departure = (t + TIME_OFFSET) - travel_duration
-                # Prevent leaving before time 0.0
-                actual_departure = max(0.0, ideal_departure) 
+                actual_departure = max(0.0, ideal_departure) # Safe to use 0.0 floor again
                 
                 commands.append({
                     'action': 'MOVE',
-                    'val': int(target_pos * 10.0), # Convert cm to mm
+                    'val': int(target_pos * 10.0), 
                     'start': actual_departure,
                     'end': actual_departure + travel_duration
                 })
                 current_pos = target_pos
-
+                
         # UNIFIED PLAY COMMAND 
         # Find every note (left or right) that strikes on this exact millisecond
         current_active_notes = [n for n in all_notes if abs(n.start - t) < 0.02]
@@ -428,6 +462,7 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
     c_code = "#define MOVE 0\n"
     c_code += "#define PLAY 1\n\n"
     
+    c_code += f"const int INITIAL_MOTOR_POSITION_MM = {initial_setup_mm};\n\n"
     c_code += "struct command {\n"
     c_code += "    uint8_t action;\n"
     c_code += "    int32_t val;\n"
@@ -461,6 +496,7 @@ def plot_robot_performance(all_notes, rh_times, rh_path_cm, right_config):
     """
     fig, ax = plt.subplots(figsize=(16, 12))
     ax.invert_yaxis()
+    ax.invert_xaxis()
     
     # 1. Setup Axes (Dynamically size based on the song length)
     max_t = max([n.end for n in all_notes] + (rh_times if rh_times else [0]))
@@ -546,13 +582,35 @@ def plot_robot_performance(all_notes, rh_times, rh_path_cm, right_config):
         last_t, last_p = rh_times[-1] + TIME_OFFSET, rh_path_cm[-1]
         ax.plot([last_p, last_p], [last_t, last_t + 0.5], color='black', lw=4, solid_capstyle='round')
 
-    # 5. Draw visual separator for the hands
-    origin_pos = get_note_position_cm(ORIGIN_MIDI_PITCH)
-    ax.axvline(x=origin_pos - WHITE_KEY_WIDTH_CM/2, color='blue', linestyle='-.', alpha=0.3)
+    # 5. Draw Dynamic Deadzones and Hand Zones
+    
+    # --- Middle Deadzone (The Gap Between Hands) ---
+    # Because our axis is mirrored (higher cm = further left), 
+    # we ADD width to get the left edge, and SUBTRACT width to get the right edge.
+    rh_left_edge = get_note_position_cm(RH_MIN_PITCH) + (WHITE_KEY_WIDTH_CM / 2)
+    lh_right_edge = get_note_position_cm(LH_MAX_PITCH) - (WHITE_KEY_WIDTH_CM / 2)
+    
+    ax.axvspan(lh_right_edge, rh_left_edge, color='red', alpha=0.1, hatch='//', zorder=0)
+    
+    mid_deadzone_center = (rh_left_edge + lh_right_edge) / 2
+    ax.text(mid_deadzone_center, 0.2, "DEADZONE (SPLIT)", color='red', alpha=0.6, fontsize=12, weight='bold', ha='center', rotation=90)
+
+    # --- Upper Deadzone (Past the Home Switch) ---
+    # Anything physically to the right of the highest playable note (into negative space)
+    rh_right_edge = get_note_position_cm(RH_MAX_PITCH) - (WHITE_KEY_WIDTH_CM / 2)
+    out_of_bounds_edge = rh_right_edge - 8.0 # Extend it visually past the 0 mark
+    
+    ax.axvspan(rh_right_edge, out_of_bounds_edge, color='red', alpha=0.15, hatch='\\\\', zorder=0)
+    ax.text(rh_right_edge - 2.0, 0.2, "DEADZONE (OUT OF BOUNDS)", color='red', alpha=0.6, fontsize=12, weight='bold', ha='center', rotation=90)
+
+    # --- Dynamic Text Labels for Active Zones ---
+    # Pushed 10cm deep into their respective zones so they don't overlap the red boxes
+    ax.text(lh_right_edge + 10.0, 0.2, "LEFT HAND ZONE", color='blue', alpha=0.5, fontsize=14, weight='bold', ha='center')
+    ax.text(rh_left_edge - 10.0, 0.2, "RIGHT HAND ZONE", color='black', alpha=0.5, fontsize=14, weight='bold', ha='center')
     
     # Dynamic text placement based on your origin
-    ax.text(origin_pos - 12.0, 0.2, "LEFT HAND ZONE", color='blue', alpha=0.5, fontsize=14, weight='bold', ha='center')
-    ax.text(origin_pos + 12.0, 0.2, "RIGHT HAND ZONE", color='black', alpha=0.5, fontsize=14, weight='bold', ha='center')
+    ax.text(origin_pos + 12.0, 0.2, "LEFT HAND ZONE", color='blue', alpha=0.5, fontsize=14, weight='bold', ha='center')
+    ax.text(origin_pos - 12.0, 0.2, "RIGHT HAND ZONE", color='black', alpha=0.5, fontsize=14, weight='bold', ha='center')
 
     ax.grid(True, axis='y', alpha=0.3)
     ax.legend(loc='lower left', fontsize=12, framealpha=0.9)
