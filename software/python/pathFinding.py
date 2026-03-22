@@ -71,8 +71,8 @@ def get_note_position_cm(midi_pitch):
     """
     
     
-""" Standard left-to-right piano ruler from MIDI 0."""
-def _get_absolute_position_cm(midi_pitch):
+""" Standard left-to-right piano ruler"""
+def get_absolute_position_cm(midi_pitch):
     octave = midi_pitch // 12
     note_in_octave = midi_pitch % 12
     octave_offsets = {0: 0.0, 1: 0.5, 2: 1.0, 3: 1.5, 4: 2.0, 5: 3.0, 6: 3.5, 7: 4.0, 8: 4.5, 9: 5.0, 10: 5.5, 11: 6.0}
@@ -80,16 +80,15 @@ def _get_absolute_position_cm(midi_pitch):
     return index * WHITE_KEY_WIDTH_CM
 
 # Find exactly where the home switch is physically located in absolute space
-RH_HOME_ABSOLUTE_CM = _get_absolute_position_cm(RH_MAX_PITCH)
+RH_HOME_ABSOLUTE_CM = get_absolute_position_cm(RH_MAX_PITCH)
 
 """
-    New Mirrored Coordinate System:
     0.0 cm is the far right note (RH_MAX_PITCH).
     Moving LEFT towards lower notes INCREASES the cm value.
 """
 def get_note_position_cm(midi_pitch):
     
-    abs_pos = _get_absolute_position_cm(midi_pitch)
+    abs_pos = get_absolute_position_cm(midi_pitch)
     return RH_HOME_ABSOLUTE_CM - abs_pos
 
 
@@ -138,6 +137,10 @@ def get_valid_hand_positions(chord_data):
     for h in potential_hs:
         chord_covered = True
         
+        #If the head position is too far then its not a valid hand position
+        if(h + 6 > get_note_position_cm(RH_MIN_PITCH and h>= 0 )):
+            break
+        
         for note_pos, note_is_black in chord_data:
             note_hit = False
             
@@ -160,6 +163,7 @@ def get_valid_hand_positions(chord_data):
         
         if chord_covered:
             valid_hs.append(h)
+            
             
     return sorted(list(valid_hs))
 
@@ -609,8 +613,8 @@ def plot_robot_performance(all_notes, rh_times, rh_path_cm, right_config):
     ax.text(rh_left_edge - 10.0, 0.2, "RIGHT HAND ZONE", color='black', alpha=0.5, fontsize=14, weight='bold', ha='center')
     
     # Dynamic text placement based on your origin
-    ax.text(origin_pos + 12.0, 0.2, "LEFT HAND ZONE", color='blue', alpha=0.5, fontsize=14, weight='bold', ha='center')
-    ax.text(origin_pos - 12.0, 0.2, "RIGHT HAND ZONE", color='black', alpha=0.5, fontsize=14, weight='bold', ha='center')
+    #ax.text(origin_pos + 12.0, 0.2, "LEFT HAND ZONE", color='blue', alpha=0.5, fontsize=14, weight='bold', ha='center')
+   # ax.text(origin_pos - 12.0, 0.2, "RIGHT HAND ZONE", color='black', alpha=0.5, fontsize=14, weight='bold', ha='center')
 
     ax.grid(True, axis='y', alpha=0.3)
     ax.legend(loc='lower left', fontsize=12, framealpha=0.9)
