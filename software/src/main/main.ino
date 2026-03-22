@@ -325,7 +325,7 @@ void loop() {
 
             */
             
-            song_elapsed_time = millis()/1000.0 - song_start_time; // - offset;
+            song_elapsed_time = millis()/1000.0 - song_start_time - offset;
 
             action_type       = schedule[command_idx].action;
             action_start_time = schedule[command_idx].start_time;
@@ -371,7 +371,7 @@ void loop() {
                     */
                     if (song_elapsed_time >= action_end_time) {
 
-                       // offset = (millis()/1000.0 - song_start_time) - action_end_time;
+                        offset = (millis()/1000.0 - song_start_time) - action_end_time;
                     }
 
                     if (real_abs(PID.error) < ANGLE_ERR_THRS && song_elapsed_time >= action_end_time) {
