@@ -103,7 +103,7 @@ Add-ons
 def get_travel_time(dist_cm):
 
     if dist_cm == 0: return 0.0
-    max_velocity = 60.0 # cm/s
+    max_velocity = 35.0 # cm/s
   #  acceleration_penalty = 0.05 # time to accelerate maybe make this into a function ? Just hardcoding a time penalty for time being
     return (dist_cm / max_velocity) #+ acceleration_penalty
 
@@ -140,6 +140,7 @@ def get_valid_hand_positions(chord_data):
         #If the head position is too far then its not a valid hand position
         if(h + 6 > get_note_position_cm(RH_MIN_PITCH and h>= 0 )):
             break
+        
         
         for note_pos, note_is_black in chord_data:
             note_hit = False

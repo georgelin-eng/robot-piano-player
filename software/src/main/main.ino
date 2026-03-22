@@ -32,7 +32,7 @@
 // PID parameters
 #define K0 0.6
 
-#define PID_KP (0.0567 * K0) * 0.3
+#define PID_KP (0.0567 * K0) * 0.32
 #define PID_KI (0.00067091 * K0)
 #define PID_KD (0.0011 * K0) 
 #define PID_KAW 0.01 // Anti-integral windup gain (WIP)
@@ -220,7 +220,7 @@ void loop() {
 
             break;
         case(HOME):
-            measured_rad = -pulseCount * RAD_PER_PULSE;
+            measured_rad = pulseCount * RAD_PER_PULSE;
             PIDController_Measure(&PID, measured_rad);
 
             speed_cmps = PID.d_measured * KJT * 100.0;
@@ -276,10 +276,10 @@ void loop() {
             if(millis() - prev_pid_time  >= PID_CONTROL_INTERVAL*1e3){
                 prev_pid_time = millis();
                 wanted_rad = INITIAL_MOTOR_POSITION_MM * KTJ/1000.0;
-                measured_rad = -pulseCount * RAD_PER_PULSE;
+                measured_rad = pulseCount * RAD_PER_PULSE;
 
                 pid_output = PIDController_Update(&PID, wanted_rad, measured_rad);
-                set_PWM(pid_output);
+                set_PWM(-pid_output);
 
                 if (real_abs(PID.error) < ANGLE_ERR_THRS) {
                     PIDController_Init(&PID);
@@ -325,7 +325,7 @@ void loop() {
 
             */
             
-            song_elapsed_time = millis()/1000.0 - song_start_time - offset;
+            song_elapsed_time = millis()/1000.0 - song_start_time; // - offset;
 
             action_type       = schedule[command_idx].action;
             action_start_time = schedule[command_idx].start_time;
@@ -349,10 +349,10 @@ void loop() {
 
                     wanted_rad = schedule[command_idx].solenoid_or_position * KTJ/1000.0;
 
-                    measured_rad = -pulseCount * RAD_PER_PULSE;
+                    measured_rad = pulseCount * RAD_PER_PULSE;
 
                     pid_output = PIDController_Update(&PID, wanted_rad, measured_rad);
-                    set_PWM(pid_output);
+                    set_PWM(-pid_output);
 
                     sprintf(LCD_BUFFER, "yd=%0.1f,ya=%0.1f", wanted_rad*KJT*1000, measured_rad*KJT*1000);
                     LCD_Log(LCD_BUFFER, 1);
@@ -371,7 +371,7 @@ void loop() {
                     */
                     if (song_elapsed_time >= action_end_time) {
 
-                        offset = (millis()/1000.0 - song_start_time) - action_end_time;
+                       // offset = (millis()/1000.0 - song_start_time) - action_end_time;
                     }
 
                     if (real_abs(PID.error) < ANGLE_ERR_THRS && song_elapsed_time >= action_end_time) {
