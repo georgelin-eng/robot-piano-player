@@ -19,8 +19,8 @@ RH_MAX_PITCH = 77
 # 'type': 'w' for White Key Finger, 'b' for Black Key Finger.
 ROBOT_FINGERS = [
     {'id': 0, 'offset': 6.0, 'type': 'w'},  
-   # {'id': 1, 'offset': 5.0, 'type': 'b'}, 
-    {'id': 1, 'offset': 2.0, 'type': 'w'}, 
+    {'id': 1, 'offset': 5.0, 'type': 'b'}, 
+    {'id': 2, 'offset': 2.0, 'type': 'w'}, 
   #  {'id': 3, 'offset': 3.0, 'type': 'b'},  
    #{'id': 4, 'offset': 4.0, 'type': 'w'},
 ]
@@ -138,8 +138,8 @@ def get_valid_hand_positions(chord_data):
         chord_covered = True
         
         #If the head position is too far then its not a valid hand position
-        if(h + 6 > get_note_position_cm(RH_MIN_PITCH and h>= 0 )):
-            break
+        #if(h + 6 > get_note_position_cm(RH_MIN_PITCH and h>= 0 )):
+        #   break
         
         
         for note_pos, note_is_black in chord_data:
@@ -386,13 +386,38 @@ def print_finger_assignments(times, path_cm, notes):
             
             print(f"{t:<8.2f} | {hand_cm:<10.2f} | {p:<6} | {note_type:<6} | Finger {assigned_id} ({assigned_type})")
             
+            
+"""Solenoid Windup Filter gives a minimum 'actuation time' to action. If action is lower then wanted time,
+    will set the action lenght to the minimum and proportionally shift rest of the song."""
+def apply_actuation_limits(commands, min_actuation_time_sec):
+    accumulated_shift = 0.0
+    
+    for cmd in commands:
+        
+        #Add windup from previous command shifts
+        cmd['start'] += accumulated_shift
+        cmd['end'] += accumulated_shift
+        
+        duration = cmd['end'] - cmd['start']
+        
+        if duration < min_actuation_time_sec:
+            time_deficit = min_actuation_time_sec - duration
+            
+            #modify current endtime
+            cmd['end'] += time_deficit
+            
+            accumulated_shift += time_deficit
+            
+    return commands
+            
 def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm, right_config, left_config):
     
     initial_setup_mm = int(right_path_cm[0] * 10.0) if right_path_cm else 0
     #  BUILD THE MASTER TIMELINE
     # Combine all notes and extract every unique start time in the whole song
     all_notes = left_notes + right_notes
-    master_times = sorted(list(set([n.start for n in all_notes])))
+    #master_times = sorted(list(set([n.start for n in all_notes])))
+    master_times = sorted(list(set([round(n.start, 3) for n in all_notes])))
     
     # dictionary to instantly look up where the right hand should be at any given right-hand note time
     right_pos_map = {round(t, 3): pos for t, pos in zip(right_times, right_path_cm)}
@@ -429,14 +454,15 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
                 
         # UNIFIED PLAY COMMAND 
         # Find every note (left or right) that strikes on this exact millisecond
-        current_active_notes = [n for n in all_notes if abs(n.start - t) < 0.02]
+        #current_active_notes = [n for n in all_notes if abs(n.start - t) < 0.02]
+        current_active_notes = [n for n in all_notes if round(n.start, 3) == t]
         bitmask = 0
         max_end_time = t
         
         for note in current_active_notes:
             max_end_time = max(max_end_time, note.end)
             
-            if note.pitch < SPLIT_POINT:
+            if note.pitch <= LH_MAX_PITCH:
                 # LEFT HAND LOGIC (Bits 0-11) 
                 if note.pitch in left_config:
                     finger_id = left_config[note.pitch]
@@ -464,6 +490,11 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
                 'end': max_end_time + TIME_OFFSET
             })
 
+    commands.sort(key=lambda x: x['start'])
+    
+    # FILTER FOR MINIMUM ACTUATION TIME
+    commands = apply_actuation_limits(commands, min_actuation_time_sec=0.2)
+    
     c_code = "#define MOVE 0\n"
     c_code += "#define PLAY 1\n\n"
     
