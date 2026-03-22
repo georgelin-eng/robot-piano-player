@@ -20,9 +20,9 @@ RH_MAX_PITCH = 77
 ROBOT_FINGERS = [
     {'id': 0, 'offset': 6.0, 'type': 'w'},  
     {'id': 1, 'offset': 5.0, 'type': 'b'}, 
-    {'id': 2, 'offset': 2.0, 'type': 'w'}, 
-  #  {'id': 3, 'offset': 3.0, 'type': 'b'},  
-   #{'id': 4, 'offset': 4.0, 'type': 'w'},
+    {'id': 2, 'offset': 4.0, 'type': 'w'},   
+    {'id': 3, 'offset': 3.0, 'type': 'b'},  
+    {'id': 4, 'offset': 2.0, 'type': 'w'},
 ]
 
 LEFT_FINGERS = {
