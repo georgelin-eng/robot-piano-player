@@ -5,7 +5,7 @@ const int INITIAL_MOTOR_POSITION_MM = 240;
 
 struct command {
     uint8_t action;
-    int32_t solenoid_or_position;
+    uint32_t solenoid_or_position;
     float start_time;
     float end_time;
 };
@@ -19,7 +19,7 @@ struct command schedule[] = {
     {PLAY, 16, 2.500f, 2.687f},
     {PLAY, 9218, 3.000f, 3.124f},
     {PLAY, 16, 3.500f, 3.687f},
-    {PLAY, 513, 4.000f, 4.124f},
+    {PLAY, 521, 4.000f, 4.124f},
     {PLAY, 16, 4.500f, 4.687f},
     {PLAY, 6272, 5.000f, 5.124f},
     {PLAY, 16, 5.500f, 5.687f},
@@ -28,7 +28,7 @@ struct command schedule[] = {
     {MOVE, 200, 6.933f, 7.000f},
     {PLAY, 5122, 7.000f, 7.124f},
     {PLAY, 16, 7.500f, 7.687f},
-    {PLAY, 513, 8.000f, 8.124f},
+    {PLAY, 521, 8.000f, 8.124f},
     {PLAY, 16, 8.500f, 8.687f},
     {MOVE, 100, 8.833f, 9.000f},
     {PLAY, 10368, 9.000f, 9.124f},

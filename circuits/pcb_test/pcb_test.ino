@@ -57,7 +57,7 @@ int prev_sval2 = -1;
 
 char output[16];
 
-<<<<<<< Updated upstream
+//<<<<<<< Updated upstream
 int mode = SOL_TEST_MODE; // set mode here
 int move_found = 1;
 
@@ -76,10 +76,10 @@ char* get_mode_name(int m) {
     default: return "Mode: Unknown";
   }
 }
-=======
-int mode = MOTOR_TEST_MODE; // set mode here
+
+//int mode = MOTOR_TEST_MODE; // set mode here
 #define MOVE_BOARD 1 // 1 if connected
->>>>>>> Stashed changes
+//>>>>>>> Stashed changes
 
 void setup() {
   delay(5000);
