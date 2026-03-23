@@ -77,7 +77,7 @@ ramp_time = 0.1;
 % yd = 0.24;
 % yd = 0.12;
 yd = 0.04;
-CPR = 14; % counts per revolution
+CPR = 64; % counts per revolution
 encoder_freq = 20 * 1e3;
 T_encoder = 1/encoder_freq;
 

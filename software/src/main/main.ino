@@ -30,18 +30,23 @@
 #define TARGET_HOME_SPEED 3.0 // cm per second
 
 // PID parameters
-#define K0 0.6
+#define K0 0.6 * 0.5 * 0.8
 
-#define PID_KP (0.0567 * K0) * 0.32
-#define PID_KI (0.00067091 * K0)
-#define PID_KD (0.0011 * K0) 
+// Small PID values
+#define PID_KP (0.0567 * K0) * 0.35
+#define PID_KI (0.00067091 * K0) * 10
+#define PID_KD (0.0011 * K0)  * 0 // no derivative works best :(
 #define PID_KAW 0.01 // Anti-integral windup gain (WIP)
-#define PID_BETA 0.2759
+// #define PID_BETA 0.2759 // mdp * 10
+#define PID_BETA 0.4211 // mdp * 5
 #define PID_LIM_MIN_INT -0.2
 #define PID_LIM_MAX_INT 0.2
 #define PID_LIM_MIN -1.0
 #define PID_LIM_MAX 1.0
-#define PID_STICTION 0.05 // feedforward control for stiction (WIP)
+#define PID_STICTION 0.10 // feedforward control for stiction (WIP)
+
+// PID error debounce parameters
+#define PID_ERROR_SETTLE_MS 50
 
 #define FINGERS_IN_EXISTENCE 20
 
@@ -137,7 +142,7 @@ void setup() {
         sprintf(LCD_BUFFER, "Error on main board");
         LCD_Log(LCD_BUFFER, 1);
 
-         Serial.print("Error on main board\r\n");
+        Serial.print("Error on main board\r\n");
 
       while (1);
     }
@@ -190,6 +195,9 @@ void loop() {
     static double wanted_rad;
     static unsigned long prev_pid_time = 0;
 
+    static double   pid_within_error_time;
+    static int      pid_error_settle_first_time_entry = 1;
+
     static double song_start_time = 0; // time when song starts, used to track elapsed time for command scheduling
     static double offset = 0;
     static double song_elapsed_time; // time elapsed since start of song
@@ -220,38 +228,39 @@ void loop() {
 
             break;
         case(HOME):
-            measured_rad = pulseCount * RAD_PER_PULSE;
-            PIDController_Measure(&PID, measured_rad);
+            // measured_rad = pulseCount * RAD_PER_PULSE;
+            // PIDController_Measure(&PID, measured_rad);
 
-            speed_cmps = PID.d_measured * KJT * 100.0;
+            // speed_cmps = PID.d_measured * KJT * 100.0;
 
-            // ramp up speed slowly. Just use if statement based control instead of tuning a PID control loop on speed
-            if (real_abs(speed_cmps) < TARGET_HOME_SPEED) {
-                pwm_dc = pwm_dc + 1;
+            // // ramp up speed slowly. Just use if statement based control instead of tuning a PID control loop on speed
+            // if (real_abs(speed_cmps) < TARGET_HOME_SPEED) {
+            //     pwm_dc = pwm_dc + 1;
 
-                if (pwm_dc >= 20) {
-                    pwm_dc = 20;
-                }
-            } else if (real_abs(speed_cmps) > TARGET_HOME_SPEED) {
-                pwm_dc = pwm_dc - 1;
+            //     if (pwm_dc >= 20) {
+            //         pwm_dc = 20;
+            //     }
+            // } else if (real_abs(speed_cmps) > TARGET_HOME_SPEED) {
+            //     pwm_dc = pwm_dc - 1;
 
-                if (pwm_dc < 0) {
-                    pwm_dc = 0;
-                }
-            }
+            //     if (pwm_dc < 0) {
+            //         pwm_dc = 0;
+            //     }
+            // }
 
-            // set_left_PWM(12); 
             // set_left_PWM(pwm_dc);
-            set_right_PWM(pwm_dc);
+            set_left_PWM(30); 
+            // set_right_PWM(30);
 
-            delay(10);
+            // delay(10);
 
             // Use PID controller to get speed measurements (derivative of position)
             
-            sprintf(LCD_BUFFER, "HOME, dc=%0d", pwm_dc);
+            // sprintf(LCD_BUFFER, "HOME, dc=%0d", pwm_dc);
+            sprintf(LCD_BUFFER, "HOME, dc=30");
             LCD_Log(LCD_BUFFER, 1);
-            sprintf(LCD_BUFFER, "rad=%0.2f, v=%0.2f", measured_rad, speed_cmps);
-            LCD_Log(LCD_BUFFER, 2);
+            // sprintf(LCD_BUFFER, "rad=%0.2f, v=%0.2f", measured_rad, speed_cmps);
+            // LCD_Log(LCD_BUFFER, 2);
             
             if (digitalRead(PROX_SENSE1) == 0) {
                 state = RUN_INIT;
@@ -375,10 +384,29 @@ void loop() {
                     }
 
                     if (real_abs(PID.error) < ANGLE_ERR_THRS && song_elapsed_time >= action_end_time) {
-                        
-                        command_idx++;
-                        PIDController_Init(&PID);
-                        set_PWM(0);
+                        if (pid_error_settle_first_time_entry) {
+                            pid_within_error_time = millis();
+                            pid_error_settle_first_time_entry = 0;
+                        }
+
+                        /*
+                            the first time the error is within threshold, we wait
+                            for next instance after PID_ERROR_SETTLE_MS that 
+                            the PID error is within threshold. There is always
+                            the chance for an invalid exit since final settle
+                            cannot be estimated while the PID is running
+
+                            Works for the no OS case
+                            Assumes that if there is OS case that oscilations
+                            are within the error treshold
+                        */
+
+                        if (millis() - pid_within_error_time >= PID_ERROR_SETTLE_MS) {
+                            command_idx++;
+                            PIDController_Init(&PID);
+                            set_PWM(0);
+                            pid_error_settle_first_time_entry = 1;
+                        }
                     }
                 }
             }
