@@ -98,7 +98,10 @@ float PIDController_Update(PIDController *pid, float setpoint, float measurement
 	/*
 	* Derivative (band-limited differentiator)
 	*/
-	d_error = (error - pid->prev_error) / pid->control_interval;
+	if (pid->prev_error != 0.0) {
+		d_error = (error - pid->prev_error) / pid->control_interval;
+	}
+
 	// pid->d_error_filt = (1 - pid->beta)*pid->d_error_filt + (pid->beta) * d_error;
 	pid->d_error_filt = d_error;
 

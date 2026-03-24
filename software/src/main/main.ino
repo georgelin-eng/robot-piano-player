@@ -390,31 +390,6 @@ void loop() {
                 if(millis() - prev_pid_time  >= PID_CONTROL_INTERVAL*1e3){
                     prev_pid_time = millis();
 
-                    wanted_rad = schedule[command_idx].solenoid_or_position * KTJ/1000.0;
-
-                    measured_rad = pulseCount * RAD_PER_PULSE;
-
-                    pid_output = PIDController_Update(&PID, wanted_rad, measured_rad);
-                    set_PWM(-pid_output);
-
-                    sprintf(LCD_BUFFER, "yd=%0.1f,ya=%0.1f", wanted_rad*KJT*1000, measured_rad*KJT*1000);
-                    LCD_Log(LCD_BUFFER, 1);
-
-                    if (PID_move_size_mm < PID_MIN_MOVE) {
-                        sprintf(LCD_BUFFER, "id%0d: small movement", command_idx);
-                        LCD_Log(LCD_BUFFER, 2);
-                    }
-                    else if (PID_move_size_mm < PID_MAX_MOVE) {
-                        sprintf(LCD_BUFFER, "id%0d: medium movement", command_idx);
-                        LCD_Log(LCD_BUFFER, 2);
-                    } else {
-                        sprintf(LCD_BUFFER, "id%0d: large movement", command_idx);
-                        LCD_Log(LCD_BUFFER, 2);
-                    }
-
-                    // sprintf(LCD_BUFFER, "t0=%0.1f,t1=%0.1f,ofs=%0.1f", song_elapsed_time, action_end_time, offset);
-                    // LCD_Log(LCD_BUFFER, 2);
-
                     /*
                     PID error being too low can result in being stuck in this loop for a long time
                     This can cause subsequant play commands to get skipped. We fix this
@@ -425,9 +400,14 @@ void loop() {
                     time delta from when the PID loop allows things to end and action end time
                     */
                     if (song_elapsed_time >= action_end_time) {
-
                         offset = (millis()/1000.0 - song_start_time) - action_end_time;
                     }
+
+                    wanted_rad = schedule[command_idx].solenoid_or_position * KTJ/1000.0;
+                    measured_rad = pulseCount * RAD_PER_PULSE;
+
+                    // calculate the error first for use in the loop
+                    pid_output = PIDController_Update(&PID, wanted_rad, measured_rad);
 
                     if (real_abs(PID.error) < ANGLE_ERR_THRS && song_elapsed_time >= action_end_time) {
                         if (pid_error_settle_first_time_entry) {
@@ -452,6 +432,24 @@ void loop() {
                             PIDController_Init(&PID);
                             set_PWM(0);
                             pid_error_settle_first_time_entry = 1;
+                        }
+                    }
+                    else if (real_abs(PID.error) >= ANGLE_ERR_THRS) {
+                        set_PWM(-pid_output);
+    
+                        sprintf(LCD_BUFFER, "yd=%0.1f,ya=%0.1f", wanted_rad*KJT*1000, measured_rad*KJT*1000);
+                        LCD_Log(LCD_BUFFER, 1);
+    
+                        if (PID_move_size_mm < PID_MIN_MOVE) {
+                            sprintf(LCD_BUFFER, "id%0d: small movement", command_idx);
+                            LCD_Log(LCD_BUFFER, 2);
+                        }
+                        else if (PID_move_size_mm < PID_MAX_MOVE) {
+                            sprintf(LCD_BUFFER, "id%0d: medium movement", command_idx);
+                            LCD_Log(LCD_BUFFER, 2);
+                        } else {
+                            sprintf(LCD_BUFFER, "id%0d: large movement", command_idx);
+                            LCD_Log(LCD_BUFFER, 2);
                         }
                     }
                 }
