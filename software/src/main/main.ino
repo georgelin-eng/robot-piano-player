@@ -220,6 +220,7 @@ void loop() {
     static double   pid_within_error_time;
     static int      pid_error_settle_first_time_entry = 1;
     static int      PID_move_size_mm;
+    static int      PID_prev_setpoint_mm;
 
     static double song_start_time = 0; // time when song starts, used to track elapsed time for command scheduling
     static double offset = 0;
@@ -382,7 +383,7 @@ void loop() {
                 if (command_idx == 0) {
                     PID_move_size_mm = schedule[command_idx].solenoid_or_position - INITIAL_MOTOR_POSITION_MM;
                 } else {
-                    PID_move_size_mm = schedule[command_idx].solenoid_or_position - schedule[command_idx-1].solenoid_or_position;
+                    PID_move_size_mm = schedule[command_idx].solenoid_or_position - PID_prev_setpoint_mm;
                 }
 
                 PIDController_GainSchedule(&PID, &K_large, &K_small, PID_move_size_mm);
@@ -428,6 +429,8 @@ void loop() {
                         */
 
                         if (millis() - pid_within_error_time >= PID_ERROR_SETTLE_MS) {
+                            PID_prev_setpoint_mm = schedule[command_idx].solenoid_or_position;
+
                             command_idx++;
                             PIDController_Init(&PID);
                             set_PWM(0);
@@ -441,14 +444,14 @@ void loop() {
                         LCD_Log(LCD_BUFFER, 1);
     
                         if (PID_move_size_mm < PID_MIN_MOVE) {
-                            sprintf(LCD_BUFFER, "id%0d: small movement", command_idx);
+                            sprintf(LCD_BUFFER, "id%0d: S, %0d", command_idx, PID_move_size_mm);
                             LCD_Log(LCD_BUFFER, 2);
                         }
                         else if (PID_move_size_mm < PID_MAX_MOVE) {
-                            sprintf(LCD_BUFFER, "id%0d: medium movement", command_idx);
+                            sprintf(LCD_BUFFER, "id%0d: M, %0d", command_idx, PID_move_size_mm);
                             LCD_Log(LCD_BUFFER, 2);
                         } else {
-                            sprintf(LCD_BUFFER, "id%0d: large movement", command_idx);
+                            sprintf(LCD_BUFFER, "id%0d: L, %0d", command_idx, PID_move_size_mm);
                             LCD_Log(LCD_BUFFER, 2);
                         }
                     }
