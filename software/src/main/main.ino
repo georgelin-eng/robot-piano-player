@@ -20,7 +20,7 @@
 #define KJT 0.00097000000000000005055  // joint-to-task space: 1:10 gearbox + 17.4mm diameter pulley 
 #define KTJ 1030.9278350515462535      // task-to-joint space
 
-#define POS_ERR_THRS   (10 /1000.0)
+#define POS_ERR_THRS (10 /1000.0) //   (10 /1000.0)
 #define ANGLE_ERR_THRS (POS_ERR_THRS * KTJ)
 
 #define PWM_FREQ 20000 // 20KHz
@@ -30,12 +30,20 @@
 #define TARGET_HOME_SPEED 3.0 // cm per second
 
 // PID parameters
-#define K0 0.6 * 0.5 * 0.8
+#define K0 0.6 // 0.6 works good
 
-// Small PID values
-#define PID_KP (0.0567 * K0) * 0.35
-#define PID_KI (0.00067091 * K0) * 10
-#define PID_KD (0.0011 * K0)  * 0 // no derivative works best :(
+// Small movement PID values
+#define PID_S_KP (0.0567 * K0) * 0.3 // * 0.138
+#define PID_S_KI (0.00067091 * K0) * 100 // * 1.45
+#define PID_S_KD (0.0011 * K0)  * 0.02//* 0.012
+#define PID_MAX_MOVE 60 // mm
+    
+// large movement PID values
+#define PID_L_KP (0.0567 * K0) * 0.28 // * 0.138
+#define PID_L_KI (0.00067091 * K0) * 4// * 1.45
+#define PID_L_KD (0.0011 * K0)  * 0.03//* 0.012
+#define PID_MIN_MOVE 20 // mm
+
 #define PID_KAW 0.01 // Anti-integral windup gain (WIP)
 // #define PID_BETA 0.2759 // mdp * 10
 #define PID_BETA 0.4211 // mdp * 5
@@ -43,7 +51,7 @@
 #define PID_LIM_MAX_INT 0.2
 #define PID_LIM_MIN -1.0
 #define PID_LIM_MAX 1.0
-#define PID_STICTION 0.10 // feedforward control for stiction (WIP)
+#define PID_STICTION 0.03 // feedforward control for stiction (WIP)
 
 // PID error debounce parameters
 #define PID_ERROR_SETTLE_MS 50
@@ -59,6 +67,8 @@ static char LCD_BUFFER[16]; // LCD buffer
 
 // PID instance
 PIDController PID;
+K_GAIN K_large;
+K_GAIN K_small;
 
 //creates pwm instance
 RP2040_PWM* PWM1_Instance;
@@ -113,10 +123,21 @@ void setup() {
     PWM1_Instance = new RP2040_PWM(PWM1_pin, PWM_FREQ, 0);
     PWM2_Instance = new RP2040_PWM(PWM2_pin, PWM_FREQ, 0);
 
+    // PID gain schedule structs
+    K_large.Kp = PID_L_KP;
+    K_large.Ki = PID_L_KI;
+    K_large.Kd = PID_L_KD;
+
+    K_small.Kp = PID_S_KP;
+    K_small.Ki = PID_S_KI;
+    K_small.Kd = PID_S_KD;
+
     // PID setup
-    PID.Kp = PID_KP;
-    PID.Ki = PID_KI;
-    PID.Kd = PID_KD;
+    PID.Kp = PID_L_KP;
+    PID.Ki = PID_L_KI;
+    PID.Kd = PID_L_KD;
+    PID.min_move = PID_MIN_MOVE;
+    PID.max_move = PID_MAX_MOVE;
     PID.Kaw = PID_KAW;
     PID.beta = PID_BETA;
     PID.limMin = PID_LIM_MIN;
@@ -197,6 +218,7 @@ void loop() {
 
     static double   pid_within_error_time;
     static int      pid_error_settle_first_time_entry = 1;
+    static int      PID_move_size_mm;
 
     static double song_start_time = 0; // time when song starts, used to track elapsed time for command scheduling
     static double offset = 0;
@@ -228,31 +250,29 @@ void loop() {
 
             break;
         case(HOME):
-            // measured_rad = pulseCount * RAD_PER_PULSE;
-            // PIDController_Measure(&PID, measured_rad);
+            measured_rad = pulseCount * RAD_PER_PULSE;
+            PIDController_Measure(&PID, measured_rad);
 
-            // speed_cmps = PID.d_measured * KJT * 100.0;
+            speed_cmps = PID.d_measured * KJT * 100.0;
 
-            // // ramp up speed slowly. Just use if statement based control instead of tuning a PID control loop on speed
-            // if (real_abs(speed_cmps) < TARGET_HOME_SPEED) {
-            //     pwm_dc = pwm_dc + 1;
+            // ramp up speed slowly. Just use if statement based control instead of tuning a PID control loop on speed
+            if (real_abs(speed_cmps) < TARGET_HOME_SPEED) {
+                pwm_dc = pwm_dc + 1;
 
-            //     if (pwm_dc >= 20) {
-            //         pwm_dc = 20;
-            //     }
-            // } else if (real_abs(speed_cmps) > TARGET_HOME_SPEED) {
-            //     pwm_dc = pwm_dc - 1;
+                if (pwm_dc >= 20) {
+                    pwm_dc = 20;
+                }
+            } else if (real_abs(speed_cmps) > TARGET_HOME_SPEED) {
+                pwm_dc = pwm_dc - 1;
 
-            //     if (pwm_dc < 0) {
-            //         pwm_dc = 0;
-            //     }
-            // }
+                if (pwm_dc < 0) {
+                    pwm_dc = 0;
+                }
+            }
 
-            // set_left_PWM(pwm_dc);
-            set_left_PWM(30); 
-            // set_right_PWM(30);
+             set_right_PWM(pwm_dc);
 
-            // delay(10);
+            delay(10);
 
             // Use PID controller to get speed measurements (derivative of position)
             
@@ -266,7 +286,6 @@ void loop() {
                 state = RUN_INIT;
                 pulseCount = 0; // Once we are finished homing set this position as 0
             }
-
             break;
 
         case(RUN_INIT):
@@ -353,6 +372,20 @@ void loop() {
                 // sprintf(LCD_BUFFER, "%0d: R_MOVE", command_idx);
                 // LCD_Log(LCD_BUFFER, 1);
 
+
+                /*
+
+                */
+                // previous vs last target position determines the size of the movement
+                // hence which set of PID values to use
+                if (command_idx == 0) {
+                    PID_move_size_mm = schedule[command_idx].solenoid_or_position - INITIAL_MOTOR_POSITION_MM;
+                } else {
+                    PID_move_size_mm = schedule[command_idx].solenoid_or_position - schedule[command_idx-1].solenoid_or_position;
+                }
+
+                PIDController_GainSchedule(&PID, &K_large, &K_small, PID_move_size_mm);
+
                 if(millis() - prev_pid_time  >= PID_CONTROL_INTERVAL*1e3){
                     prev_pid_time = millis();
 
@@ -366,8 +399,20 @@ void loop() {
                     sprintf(LCD_BUFFER, "yd=%0.1f,ya=%0.1f", wanted_rad*KJT*1000, measured_rad*KJT*1000);
                     LCD_Log(LCD_BUFFER, 1);
 
-                    sprintf(LCD_BUFFER, "t0=%0.1f,t1=%0.1f,ofs=%0.1f", song_elapsed_time, action_end_time, offset);
-                    LCD_Log(LCD_BUFFER, 2);
+                    if (PID_move_size_mm < PID_MIN_MOVE) {
+                        sprintf(LCD_BUFFER, "id%0d: small movement", command_idx);
+                        LCD_Log(LCD_BUFFER, 2);
+                    }
+                    else if (PID_move_size_mm < PID_MAX_MOVE) {
+                        sprintf(LCD_BUFFER, "id%0d: medium movement", command_idx);
+                        LCD_Log(LCD_BUFFER, 2);
+                    } else {
+                        sprintf(LCD_BUFFER, "id%0d: large movement", command_idx);
+                        LCD_Log(LCD_BUFFER, 2);
+                    }
+
+                    // sprintf(LCD_BUFFER, "t0=%0.1f,t1=%0.1f,ofs=%0.1f", song_elapsed_time, action_end_time, offset);
+                    // LCD_Log(LCD_BUFFER, 2);
 
                     /*
                     PID error being too low can result in being stuck in this loop for a long time

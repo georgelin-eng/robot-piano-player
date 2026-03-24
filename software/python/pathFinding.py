@@ -3,8 +3,8 @@ import midi_utils
 import collections
 import math
 
-WHITE_KEY_WIDTH_CM = 2.0 
-HIT_TOLERANCE_CM = 0.3 
+WHITE_KEY_WIDTH_CM = 2.2
+HIT_TOLERANCE_CM = 0
 
 # RH - LF Split
 ORIGIN_MIDI_PITCH = 48
@@ -18,11 +18,11 @@ RH_MAX_PITCH = 77
 # offset is distance in cm from the  left edge)
 # 'type': 'w' for White Key Finger, 'b' for Black Key Finger.
 ROBOT_FINGERS = [
-    {'id': 0, 'offset': 6.0, 'type': 'w'},  
-    {'id': 1, 'offset': 5.0, 'type': 'b'}, 
-    {'id': 2, 'offset': 4.0, 'type': 'w'},   
-    {'id': 3, 'offset': 3.0, 'type': 'b'},  
-    {'id': 4, 'offset': 2.0, 'type': 'w'},
+    {'id': 0, 'offset': 6.6, 'type': 'w'},  
+    {'id': 1, 'offset': 5.5 , 'type': 'b'}, 
+    {'id': 2, 'offset': 4.4, 'type': 'w'},   
+    {'id': 3, 'offset': 3.3, 'type': 'b'},  
+    {'id': 4, 'offset': 2.2, 'type': 'w'},
 ]
 
 LEFT_FINGERS = {

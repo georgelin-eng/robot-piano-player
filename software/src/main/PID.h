@@ -16,8 +16,8 @@ typedef struct {
 	float Kd;
 
 	// Min and max regimes that the PID has been tuned for. Used for gain scheduling
-	float min_val;
-	float max_val;
+	float min_move;
+	float max_move;
 
 	// Anti-windup gain
 	float Kaw;
@@ -158,31 +158,31 @@ void PIDController_Measure(PIDController *pid, float measurement) {
 
 
 void PIDController_GainSchedule(
-    PIDController *pid, K_GAIN *K_large,  K_GAIN *K_small, float curr_val 
+    PIDController *pid, K_GAIN *K_large,  K_GAIN *K_small, float move_size 
 ) {
     // linearly interpolate between two sets of PID values tuned for large and small movements
 	// Handle the cases where the input value is greater than the limits that we've tuned for 
 
 	// greater than max
-	if (curr_val > pid->max_val || curr_val < -pid->max_val) {
+	if (move_size > pid->max_move || move_size < -pid->max_move) {
 		pid->Kp = K_large->Kp;
 		pid->Ki = K_large->Ki;
 		pid->Kd = K_large->Kd;
 
 	// smaller than min
-	} else if (curr_val < pid->min_val || curr_val > -pid->min_val) {
+	} else if (move_size < pid->min_move || move_size > -pid->min_move) {
 		pid->Kp = K_small->Kp;
 		pid->Ki = K_small->Ki;
 		pid->Kd = K_small->Kd;
 
-	// linearly interpolate between large and small based on curr_val
+	// linearly interpolate between large and small based on move_size
 	} else {
-		float del_x = curr_val - pid->min_val;
+		float del_x = move_size - pid->min_move;
 		
 		// TODO: These are constants so not necessary to do this calculation all the time
-		float slope_Kp = (K_large->Kp - K_small->Kp) / (pid->max_val - pid->min_val);
-		float slope_Ki = (K_large->Ki - K_small->Ki) / (pid->max_val - pid->min_val);
-		float slope_Kd = (K_large->Kd - K_small->Kd) / (pid->max_val - pid->min_val);
+		float slope_Kp = (K_large->Kp - K_small->Kp) / (pid->max_move - pid->min_move);
+		float slope_Ki = (K_large->Ki - K_small->Ki) / (pid->max_move - pid->min_move);
+		float slope_Kd = (K_large->Kd - K_small->Kd) / (pid->max_move - pid->min_move);
 
 		pid->Kp = K_small->Kp + slope_Kp * del_x;
 		pid->Ki = K_small->Ki + slope_Ki * del_x;
