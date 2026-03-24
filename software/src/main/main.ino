@@ -49,8 +49,8 @@
 #define PID_KAW 0.01 // Anti-integral windup gain (WIP)
 // #define PID_BETA 0.2759 // mdp * 10
 #define PID_BETA 0.4211 // mdp * 5
-#define PID_LIM_MIN_INT -0.2
-#define PID_LIM_MAX_INT 0.2
+#define PID_LIM_MIN_INT -0.4
+#define PID_LIM_MAX_INT 0.4
 #define PID_LIM_MIN -1.0
 #define PID_LIM_MAX 1.0
 
@@ -367,6 +367,7 @@ void loop() {
                 lcd.setDataAddr(LCD_Line2Start);
                 lcd.clear();    
                 state = DONE;
+
             }
 
             // PID loop
@@ -443,11 +444,11 @@ void loop() {
                         sprintf(LCD_BUFFER, "yd=%0.1f,ya=%0.1f", wanted_rad*KJT*1000, measured_rad*KJT*1000);
                         LCD_Log(LCD_BUFFER, 1);
     
-                        if (PID_move_size_mm < PID_MIN_MOVE) {
+                        if (abs(PID_move_size_mm) < PID_MIN_MOVE) {
                             sprintf(LCD_BUFFER, "id%0d: S, %0d", command_idx, PID_move_size_mm);
                             LCD_Log(LCD_BUFFER, 2);
                         }
-                        else if (PID_move_size_mm < PID_MAX_MOVE) {
+                        else if (abs(PID_move_size_mm) < PID_MAX_MOVE) {
                             sprintf(LCD_BUFFER, "id%0d: M, %0d", command_idx, PID_move_size_mm);
                             LCD_Log(LCD_BUFFER, 2);
                         } else {
@@ -498,6 +499,10 @@ void loop() {
             sprintf(LCD_BUFFER, "ya=%0.1f       ", measured_rad);
             LCD_Log(LCD_BUFFER, 2);
 
+
+            for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
+                set_note_state(i, LOW);
+            }
 
             break;
         case(ERROR):
