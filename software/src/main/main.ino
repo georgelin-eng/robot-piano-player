@@ -34,15 +34,17 @@
 
 // Small movement PID values
 #define PID_S_KP (0.0567 * K0) * 0.3 // * 0.138
-#define PID_S_KI (0.00067091 * K0) * 100 // * 1.45
-#define PID_S_KD (0.0011 * K0)  * 0.02//* 0.012
-#define PID_MAX_MOVE 60 // mm
+#define PID_S_KI (0.00067091 * K0) * 10 // * 1.45
+#define PID_S_KD (0.0011 * K0)  * 0.01 * 0.1//* 0.012
+#define PID_MAX_MOVE 80 // mm
     
 // large movement PID values
-#define PID_L_KP (0.0567 * K0) * 0.28 // * 0.138
-#define PID_L_KI (0.00067091 * K0) * 4// * 1.45
-#define PID_L_KD (0.0011 * K0)  * 0.03//* 0.012
+#define PID_L_KP (0.0567 * K0) * 0.3 // * 0.138
+#define PID_L_KI (0.00067091 * K0) * 8 // * 1.45
+#define PID_L_KD (0.0011 * K0)  * 0.01 * 0.1//* 0.012
 #define PID_MIN_MOVE 20 // mm
+
+#define PID_STICTION 0.03 // feedforward control for stiction (WIP)
 
 #define PID_KAW 0.01 // Anti-integral windup gain (WIP)
 // #define PID_BETA 0.2759 // mdp * 10
@@ -51,7 +53,6 @@
 #define PID_LIM_MAX_INT 0.2
 #define PID_LIM_MIN -1.0
 #define PID_LIM_MAX 1.0
-#define PID_STICTION 0.03 // feedforward control for stiction (WIP)
 
 // PID error debounce parameters
 #define PID_ERROR_SETTLE_MS 50
@@ -462,8 +463,8 @@ void loop() {
                 sprintf(LCD_BUFFER, "%0d: R_P %0d", command_idx, mask);
                 LCD_Log(LCD_BUFFER, 1);
 
-                sprintf(LCD_BUFFER, "t=%0.1lf, e=%0.1lf", song_elapsed_time, action_end_time);
-                LCD_Log(LCD_BUFFER, 2);
+                // sprintf(LCD_BUFFER, "t=%0.1lf, e=%0.1lf", song_elapsed_time, action_end_time);
+                // LCD_Log(LCD_BUFFER, 2);
                 
                 for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
                     if (mask & (1 << i)){
