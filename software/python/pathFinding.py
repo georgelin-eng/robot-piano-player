@@ -3,8 +3,13 @@ import midi_utils
 import collections
 import math
 
+import pretty_midi
+import midi_utils
+import collections
+import math
+
 WHITE_KEY_WIDTH_CM = 2.28
-HIT_TOLERANCE_CM = 0
+HIT_TOLERANCE_CM = 1
 
 # RH - LF Split
 ORIGIN_MIDI_PITCH = 48
@@ -15,17 +20,27 @@ LH_MAX_PITCH = 47
 RH_MIN_PITCH = 52      
 RH_MAX_PITCH = 77
 
-WHITE_BLACK_KEY_DISTANCE = WHITE_KEY_WIDTH_CM/2
+WHITE_KEY_SOLENOID_SEPERATION_CM = 2.3
+BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION = 0.7
+BLACK_KEY_WIDTH = 0.9
+
+BLACK_KEY_OFFSETS_CM = {
+    1: -BLACK_KEY_WIDTH/3*2 + BLACK_KEY_WIDTH/2,  # C# (Shifted Left)
+    3:  BLACK_KEY_WIDTH/3*2 - BLACK_KEY_WIDTH/2,  # D# (Shifted Right)
+    6: -BLACK_KEY_WIDTH/3*2 + BLACK_KEY_WIDTH/2,  # F# (Shifted Left)
+    8:  0.00,  # G# (Centered)
+    10: BLACK_KEY_WIDTH/3*2 - BLACK_KEY_WIDTH/2,   # A# (Shifted Right)
+}
 
 # offset is distance in cm from the  left edge)
 # 'type': 'w' for White Key Finger, 'b' for Black Key Finger.
 ROBOT_FINGERS = [
-    {'id': 0, 'offset': 3*WHITE_KEY_WIDTH_CM, 'type': 'w'},  
-    {'id': 1, 'offset': 2*WHITE_KEY_WIDTH_CM + WHITE_BLACK_KEY_DISTANCE , 'type': 'b'}, 
-    {'id': 2, 'offset': 2*WHITE_KEY_WIDTH_CM, 'type': 'w'},   
-    {'id': 3, 'offset': 1*WHITE_KEY_WIDTH_CM + WHITE_BLACK_KEY_DISTANCE, 'type': 'b'},  
-    {'id': 4, 'offset': 1*WHITE_KEY_WIDTH_CM, 'type': 'w'},
-#    {'id': 5, 'offset': 0*WHITE_KEY_WIDTH_CM, 'type': 'w'}
+    {'id': 0, 'offset': 3*WHITE_KEY_SOLENOID_SEPERATION_CM, 'type': 'w'},  
+    {'id': 1, 'offset': 2*WHITE_KEY_SOLENOID_SEPERATION_CM + BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION, 'type': 'b'}, 
+    {'id': 2, 'offset': 2*WHITE_KEY_SOLENOID_SEPERATION_CM, 'type': 'w'},   
+    {'id': 3, 'offset': 1*WHITE_KEY_SOLENOID_SEPERATION_CM + BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION, 'type': 'b'},  
+    {'id': 4, 'offset': 1*WHITE_KEY_SOLENOID_SEPERATION_CM, 'type': 'w'},
+#    {'id': 5, 'offset': BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION, 'type': 'w'}
 #    {'id': 6, 'offset': 0*WHITE_KEY_WIDTH_CM, 'type': 'w'}
 ]
 
@@ -81,6 +96,12 @@ def get_absolute_position_cm(midi_pitch):
     note_in_octave = midi_pitch % 12
     octave_offsets = {0: 0.0, 1: 0.5, 2: 1.0, 3: 1.5, 4: 2.0, 5: 3.0, 6: 3.5, 7: 4.0, 8: 4.5, 9: 5.0, 10: 5.5, 11: 6.0}
     index = (octave * 7) + octave_offsets[note_in_octave]
+    
+    if note_in_octave in BLACK_KEY_OFFSETS_CM:
+        # If your axis is mirrored (moving left adds distance), 
+        # you might need to flip the + or - depending on your exact zero point!
+        return index*WHITE_KEY_WIDTH_CM + BLACK_KEY_OFFSETS_CM[note_in_octave]
+    
     return index * WHITE_KEY_WIDTH_CM
 
 # Find exactly where the home switch is physically located in absolute space
@@ -107,9 +128,10 @@ Add-ons
 def get_travel_time(dist_cm):
 
     if dist_cm == 0: return 0.0
-    max_velocity = 35.0 # cm/s
+    acc_penalty = 0.01
+    max_velocity = 60.0  # cm/s
   #  acceleration_penalty = 0.05 # time to accelerate maybe make this into a function ? Just hardcoding a time penalty for time being
-    return (dist_cm / max_velocity) #+ acceleration_penalty
+    return (dist_cm / max_velocity) + acc_penalty
 
 
 """ 
@@ -497,7 +519,7 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
     commands.sort(key=lambda x: x['start'])
     
     # FILTER FOR MINIMUM ACTUATION TIME
-    commands = apply_actuation_limits(commands, min_actuation_time_sec=0.2)
+    commands = apply_actuation_limits(commands, min_actuation_time_sec=0.1)
     
     c_code = "#define MOVE 0\n"
     c_code += "#define PLAY 1\n\n"
