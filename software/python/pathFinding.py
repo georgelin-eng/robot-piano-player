@@ -465,7 +465,7 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
             # commands for the moves that happen mid-song.
             if target_pos != current_pos:
                 dist = abs(target_pos - current_pos)
-                travel_duration = get_travel_time(dist)
+                travel_duration = get_travel_time(dist-3)
                 
                 ideal_departure = (t + TIME_OFFSET) - travel_duration
                 actual_departure = max(0.0, ideal_departure) # Safe to use 0.0 floor again
