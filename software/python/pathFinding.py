@@ -8,7 +8,7 @@ import midi_utils
 import collections
 import math
 
-WHITE_KEY_WIDTH_CM = 2.28
+WHITE_KEY_WIDTH_CM = 2.2
 HIT_TOLERANCE_CM = 1
 
 # RH - LF Split
@@ -472,7 +472,7 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
                 
                 commands.append({
                     'action': 'MOVE',
-                    'solenoid_or_position': int(target_pos * 10.0 - 3), 
+                    'solenoid_or_position': int(target_pos * 10.0), 
                     'start': actual_departure,
                     'end': actual_departure + travel_duration
                 })
