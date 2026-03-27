@@ -8,7 +8,7 @@ import midi_utils
 import collections
 import math
 
-WHITE_KEY_WIDTH_CM = 2.2
+WHITE_KEY_WIDTH_CM = 2.25
 HIT_TOLERANCE_CM = 1
 
 # RH - LF Split
