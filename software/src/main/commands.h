@@ -6,7 +6,7 @@
 
 #include <stdint.h> // included for uint8_t definition
 
-const int INITIAL_MOTOR_POSITION_MM = 252;
+const int INITIAL_MOTOR_POSITION_MM = 247;
 
 struct command {
     uint8_t action;
@@ -19,7 +19,7 @@ struct command schedule[] = {
     {PLAY, 16, 0.500f, 0.687f},
     {PLAY, 2192, 1.000f, 1.124f},
     {PLAY, 16, 1.500f, 1.687f},
-    {MOVE, 252, 1.553f, 2.000f},
+    {MOVE, 247, 1.553f, 2.000f},
     {PLAY, 8769, 2.000f, 2.124f},
     {PLAY, 16, 2.500f, 2.687f},
     {MOVE, 246, 2.980f, 3.080f},
@@ -79,7 +79,7 @@ struct command schedule[] = {
     {PLAY, 16401, 18.157f, 18.282f},
     {PLAY, 16, 18.407f, 18.532f},
     {PLAY, 16896, 18.657f, 18.782f},
-    {MOVE, 252, 19.137f, 19.238f},
+    {MOVE, 247, 19.137f, 19.238f},
     {PLAY, 8264, 19.238f, 19.362f},
     {MOVE, 179, 19.605f, 19.738f},
     {PLAY, 16512, 19.738f, 19.862f},
@@ -184,6 +184,7 @@ struct command schedule[] = {
 };
 
 const int SCHEDULE_LENGTH = 165;
+
 
 
 
