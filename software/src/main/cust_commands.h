@@ -1,7 +1,12 @@
-#ifndef CUST_COMMANDS_H
-#define CUST_COMMANDS_H
+#ifndef COMMANDS_H
+#define COMMANDS_H
+
+#define MOVE 0
+#define PLAY 1
 
 #include <stdint.h> // included for uint8_t definition
+
+const int INITIAL_MOTOR_POSITION_MM = 256;
 
 struct command {
     uint8_t action;
@@ -10,26 +15,19 @@ struct command {
     float end_time;
 };
 
-#define PLAY 0
-#define MOVE 1
-
-#define SCHEDULE_LENGTH 15
-
 struct command schedule[] = {
-    {MOVE, 20,  2.000f,   3.0000f}, // 1
-    {MOVE, 50,  3.000f,   4.0000f}, // 2
-    {MOVE, 80,  4.000f,   5.0000f}, // 3
-    {MOVE, 10,  5.000f,   6.0000f}, // 4
-    {MOVE, 50,  6.000f,   7.0000f}, // 5
-    {MOVE, 80,  7.000f,   8.0000f}, // 6
-    {MOVE, 20,  8.000f,   9.0000f}, // 7
-    {MOVE, 10,  9.000f,  10.0000f}, // 8
-    {MOVE, 60,  10.000f, 11.0000f}, // 9
-    {MOVE, 100, 11.000f, 12.0000f}, // 10
-    {MOVE, 70,  12.000f, 13.0000f}, // 11
-    {MOVE, 80,  13.000f, 14.0000f}, // 12
-    {MOVE, 100, 14.000f, 15.0000f}, // 13
-    {MOVE,  20, 15.000f, 16.0000f}, // 14
+    {MOVE, 50,   0.000f,  2.000f},
+    {MOVE, 100,  2.000f,  4.000f},
+    {MOVE, 10,   4.000f,  6.000f},
+    {MOVE, 200,  6.000f,  8.000f},
+    {MOVE, 220,  8.000f, 10.000f},
+    {MOVE, 240, 10.000f, 12.000f},
+    {MOVE, 280, 12.000f, 14.000f},
+    {MOVE, 200, 14.000f, 16.000f},
 };
+
+const int SCHEDULE_LENGTH = 165;
+
+
 
 #endif

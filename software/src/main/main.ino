@@ -20,39 +20,51 @@
 #define KJT 0.00097000000000000005055  // joint-to-task space: 1:10 gearbox + 17.4mm diameter pulley 
 #define KTJ 1030.9278350515462535      // task-to-joint space
 
-#define POS_ERR_THRS (10 /1000.0) //   (10 /1000.0)
+#define POS_ERR_THRS (5/1000.0) //   (10 /1000.0)
 #define ANGLE_ERR_THRS (POS_ERR_THRS * KTJ)
 
 #define PWM_FREQ 20000 // 20KHz
-#define PID_CONTROL_FREQ 80.0
+#define PID_CONTROL_FREQ 1000.0
 // #define PID_CONTROL_INTERVAL (1 / PID_CONTROL_FREQ)
 #define PID_CONTROL_INTERVAL 0.0125
 #define TARGET_HOME_SPEED 3.0 // cm per second
 
 // PID parameters
-#define K0 0.6 // 0.6 works good
+#define K0 0.6 * 1.1// 0.6 works good
 
 // Small movement PID values
-#define PID_S_KP (0.0567 * K0) * 0.3 // * 0.138
-#define PID_S_KI (0.00067091 * K0) * 10 // * 1.45
-#define PID_S_KD (0.0011 * K0)  * 0.01 * 0.1//* 0.012
-#define PID_MAX_MOVE 80 // mm
-    
-// large movement PID values
-#define PID_L_KP (0.0567 * K0) * 0.3 // * 0.138
-#define PID_L_KI (0.00067091 * K0) * 8 // * 1.45
-#define PID_L_KD (0.0011 * K0)  * 0.01 * 0.1//* 0.012
-#define PID_MIN_MOVE 20 // mm
+#define PID_S_KP (0.0567 * K0 * 0.174) * 1.25// * 0.138
+#define PID_S_KI (0.00067091 * K0 * 260) *0 // * 1.45
+#define PID_S_KD (0.0011 * K0 * 0.00135)* 10.0//* 0.012
 
-#define PID_STICTION 0.03 // feedforward control for stiction (WIP)
+// large movement PID values
+#define PID_L_KP (0.0567 * K0 * 0.3) * 0.8 // * 0.138
+#define PID_L_KI (0.00067091 * K0 * 200) *0  // * 1.45
+#define PID_L_KD (0.0011 * K0 * 0.0015) * 0.25 //* 0.012
+
+#define PID_MIN_MOVE 60 // mm
+#define PID_MAX_MOVE 100 // mm
+
+#define PID_STICTION 0.00 // feedforward control for stiction (WIP)
 
 #define PID_KAW 0.01 // Anti-integral windup gain (WIP)
-// #define PID_BETA 0.2759 // mdp * 10
-#define PID_BETA 0.4211 // mdp * 5
+// #define PID_BETA 0.2759 // mdp * 10 @ 80Hz
+// #define PID_BETA 0.4211 // mdp * 5 @ 80Hz
+#define PID_BETA 0.7800 // mdp * 10 @ 1kHz
 #define PID_LIM_MIN_INT -0.4
 #define PID_LIM_MAX_INT 0.4
 #define PID_LIM_MIN -1.0
 #define PID_LIM_MAX 1.0
+
+// PID integral separation
+#define PID_ERR_THRS_3 (40/1000.0 * KTJ)
+#define PID_ERR_THRS_2 (20/1000.0 * KTJ) 
+#define PID_ERR_THRS_1 (10/1000.0 * KTJ)
+
+#define PID_SWITCH_COEFF3 0.1     // large error
+#define PID_SWITCH_COEFF2 0.4   
+#define PID_SWITCH_COEFF1 0.8
+#define PID_SWITCH_COEFF0 1     // small error
 
 // PID error debounce parameters
 #define PID_ERROR_SETTLE_MS 50
@@ -70,6 +82,7 @@ static char LCD_BUFFER[16]; // LCD buffer
 PIDController PID;
 K_GAIN K_large;
 K_GAIN K_small;
+IntegralCoeff IntCoeff;
 
 //creates pwm instance
 RP2040_PWM* PWM1_Instance;
@@ -148,6 +161,15 @@ void setup() {
     PID.control_interval = PID_CONTROL_INTERVAL;
     PID.stiction = PID_STICTION;
 
+    IntCoeff.beta0 = PID_SWITCH_COEFF0;
+    IntCoeff.beta1 = PID_SWITCH_COEFF1;
+    IntCoeff.beta2 = PID_SWITCH_COEFF2;
+    IntCoeff.beta3 = PID_SWITCH_COEFF3;
+
+    IntCoeff.err_thrs_1 = PID_ERR_THRS_1;
+    IntCoeff.err_thrs_2 = PID_ERR_THRS_2;
+    IntCoeff.err_thrs_3 = PID_ERR_THRS_3;
+
     state = IDLE;
 
     // LCD setup
@@ -221,6 +243,10 @@ void loop() {
     static int      pid_error_settle_first_time_entry = 1;
     static int      PID_move_size_mm;
     static int      PID_prev_setpoint_mm;
+
+    // --- Dither Statics ---
+    static double dither_val = 0.0;
+    static double dither_dir = 1.0;
 
     static double song_start_time = 0; // time when song starts, used to track elapsed time for command scheduling
     static double offset = 0;
@@ -392,6 +418,25 @@ void loop() {
                 if(millis() - prev_pid_time  >= PID_CONTROL_INTERVAL*1e3){
                     prev_pid_time = millis();
 
+
+                    // --- GENERATE TRIANGULAR DITHER ---
+                    /*
+                        To decrease the effect of static friction, we add a
+                        triangular dither to our output
+                    */
+
+                    double dither_amp = 0.10;  // Peak amplitude to break stiction
+                    double dither_step = 0.02; // How fast the triangle wave moves per 1ms tick
+
+                    dither_val += (dither_step * dither_dir);
+                    if (dither_val >= dither_amp) {
+                        dither_val = dither_amp;
+                        dither_dir = -1.0; // Turn around and go down
+                    } else if (dither_val <= -dither_amp) {
+                        dither_val = -dither_amp;
+                        dither_dir = 1.0;  // Turn around and go up
+                    }
+
                     /*
                     PID error being too low can result in being stuck in this loop for a long time
                     This can cause subsequant play commands to get skipped. We fix this
@@ -410,6 +455,7 @@ void loop() {
 
                     // calculate the error first for use in the loop
                     pid_output = PIDController_Update(&PID, wanted_rad, measured_rad);
+                    // PIDController_IntegralUpdate(&PID, &IntCoeff);
 
                     if (real_abs(PID.error) < ANGLE_ERR_THRS && song_elapsed_time >= action_end_time) {
                         if (pid_error_settle_first_time_entry) {
@@ -439,7 +485,7 @@ void loop() {
                         }
                     }
                     else if (real_abs(PID.error) >= ANGLE_ERR_THRS) {
-                        set_PWM(-pid_output);
+                        set_PWM(-(pid_output+dither_val));
     
                         sprintf(LCD_BUFFER, "yd=%0.1f,ya=%0.1f", wanted_rad*KJT*1000, measured_rad*KJT*1000);
                         LCD_Log(LCD_BUFFER, 1);

@@ -1,7 +1,7 @@
 clear clc;
 addpath("scripts/")
 motor_name = 'Polulu37D_64CPR';
-CF      = 80;   % Control freq [Hz]
+CF      = 1000;  % Control freq [Hz]
 DC      = 0.5;  % Duty cycle
 WnRes   = 2;    % Frequency search res
 ZetaRes = 0.05; % Damping factor search res

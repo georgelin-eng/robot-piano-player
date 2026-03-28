@@ -9,11 +9,33 @@ typedef struct {
 } K_GAIN;
 
 typedef struct {
+	float dither_freq;
+	float dither_amplitude;
+	float out;
+} ditherController;
+
+typedef struct {
+
+	float beta0;
+	float beta1;
+	float beta2;
+	float beta3;
+
+	float err_thrs_1;
+	float err_thrs_2;
+	float err_thrs_3;
+
+} IntegralCoeff;
+
+typedef struct {
 
 	// Controller gains
 	float Kp;
 	float Ki;
 	float Kd;
+
+	// integral separation
+	float switching_coeff = 1.0; 
 
 	// Min and max regimes that the PID has been tuned for. Used for gain scheduling
 	float min_move;
@@ -109,7 +131,7 @@ float PIDController_Update(PIDController *pid, float setpoint, float measurement
 	/*
 	* Compute output and apply limits
 	*/
-    integrator     = pid->Ki * pid->sum_error;
+    integrator     = pid->switching_coeff*pid->Ki*pid->sum_error;
     differentiator = pid->Kd * pid->d_error_filt;
 
 	// Integrator mangement:
@@ -127,6 +149,8 @@ float PIDController_Update(PIDController *pid, float setpoint, float measurement
 	// }
 
 	pid->out = proportional + integrator + differentiator;
+
+	if (pid -> d_measured)
 
 	// Handling stiction if the PID output is too low. Idea is this acts as a feedforward path
 	if (pid->out < pid->stiction && pid->out > 0) { // positive case
@@ -155,6 +179,8 @@ float PIDController_Update(PIDController *pid, float setpoint, float measurement
 }
 
 void PIDController_Measure(PIDController *pid, float measurement) {
+	// float d_x = (measurement - pid->prev_measure) / pid->control_interval;
+
 	pid->d_measured = (measurement - pid->prev_measure) / pid->control_interval;
 	pid->prev_measure = measurement;
 }
@@ -190,6 +216,18 @@ void PIDController_GainSchedule(
 		pid->Kp = K_small->Kp + slope_Kp * del_x;
 		pid->Ki = K_small->Ki + slope_Ki * del_x;
 		pid->Kd = K_small->Kd + slope_Kd * del_x;
+	}
+}
+
+void PIDController_IntegralUpdate(PIDController *pid, IntegralCoeff *IntCoeff) {
+	if (pid->error > IntCoeff->err_thrs_3) {
+		pid->switching_coeff = IntCoeff->beta3;
+	} else if (pid->error > IntCoeff->err_thrs_2) {
+		pid->switching_coeff = IntCoeff->beta2;
+	} else if (pid->error > IntCoeff->err_thrs_1) {
+		pid->switching_coeff = IntCoeff->beta1;
+	} else {
+		pid->switching_coeff = IntCoeff->beta0;
 	}
 }
 

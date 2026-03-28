@@ -9,8 +9,8 @@ p = pole(minreal(GHs));
 tol = 1e-6;                         % numerical tolerance
 p_nz = p(abs(real(p)) > tol);       % exclude (near) zero real-part poles
 wd = -max(real(p_nz));
-% Nf = CF/(ceil(wd)*10) - 0.5 - DC;
-Nf = CF/(ceil(wd)*10);
+Nf = CF/(ceil(wd)*10) - 0.5 - DC;
+% Nf = CF/(ceil(wd)*10);
 beta = Nf/(1+Nf); 
 tau = -dt / log(beta);
 
