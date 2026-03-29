@@ -8,7 +8,7 @@ import midi_utils
 import collections
 import math
 
-WHITE_KEY_WIDTH_CM = 2.25
+WHITE_KEY_WIDTH_CM = 2.23
 HIT_TOLERANCE_CM = 1
 
 # RH - LF Split
@@ -20,16 +20,16 @@ LH_MAX_PITCH = 47
 RH_MIN_PITCH = 52      
 RH_MAX_PITCH = 77
 
-WHITE_KEY_SOLENOID_SEPERATION_CM = 2.3
+WHITE_KEY_SOLENOID_SEPERATION_CM = 2.28
 BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION = 0.7
 BLACK_KEY_WIDTH = 0.9
 
 BLACK_KEY_OFFSETS_CM = {
-    1: -BLACK_KEY_WIDTH/3*2 + BLACK_KEY_WIDTH/2,  # C# (Shifted Left)
-    3:  BLACK_KEY_WIDTH/3*2 - BLACK_KEY_WIDTH/2,  # D# (Shifted Right)
-    6: -BLACK_KEY_WIDTH/3*2 + BLACK_KEY_WIDTH/2,  # F# (Shifted Left)
+    1: 0 ,#-BLACK_KEY_WIDTH/3*2 + BLACK_KEY_WIDTH/2,  # C# (Shifted Left)
+    3: 0, # BLACK_KEY_WIDTH/3*2 - BLACK_KEY_WIDTH/2,  # D# (Shifted Right)
+    6: 0, #-BLACK_KEY_WIDTH/3*2 + BLACK_KEY_WIDTH/2,  # F# (Shifted Left)
     8:  0.00,  # G# (Centered)
-    10: BLACK_KEY_WIDTH/3*2 - BLACK_KEY_WIDTH/2,   # A# (Shifted Right)
+    10: 0, #BLACK_KEY_WIDTH/3*2 - BLACK_KEY_WIDTH/2,   # A# (Shifted Right)
 }
 
 # offset is distance in cm from the  left edge)
@@ -465,7 +465,7 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
             # commands for the moves that happen mid-song.
             if target_pos != current_pos:
                 dist = abs(target_pos - current_pos)
-                travel_duration = get_travel_time(dist-3)
+                travel_duration = get_travel_time(dist)
                 
                 ideal_departure = (t + TIME_OFFSET) - travel_duration
                 actual_departure = max(0.0, ideal_departure) # Safe to use 0.0 floor again

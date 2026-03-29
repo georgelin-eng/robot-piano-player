@@ -175,6 +175,10 @@ float PIDController_Update(PIDController *pid, float setpoint, float measurement
 	pid->prev_measure     = measurement;
 
 	/* Return controller output */
+
+	//if(error <= 8 && error >=0) return -0.112;
+	//else if (error >= -8 && error<= 0) return 0.112;
+
 	return pid->out;
 }
 

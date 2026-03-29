@@ -2,7 +2,7 @@
 #include "RP2040_PWM.h"        // PWM
 #include "pins.h"              // pin to variable mappings
 #include "commands.h"          // command table
-// #include "cust_commands.h"        // command table
+//#include "cust_commands.h"        // command table
 // #include "led_commands.h" 
 #include "peripherals.h"       // ISRs for interacting with peripherals
 #include "PID.h"               // PID functions
@@ -20,41 +20,44 @@
 #define KJT 0.00097000000000000005055  // joint-to-task space: 1:10 gearbox + 17.4mm diameter pulley 
 #define KTJ 1030.9278350515462535      // task-to-joint space
 
-#define POS_ERR_THRS (5/1000.0) //   (10 /1000.0)
+#define POS_ERR_THRS (4/1000.0) //   (10 /1000.0)
 #define ANGLE_ERR_THRS (POS_ERR_THRS * KTJ)
 
 #define PWM_FREQ 20000 // 20KHz
 #define PID_CONTROL_FREQ 1000.0
-// #define PID_CONTROL_INTERVAL (1 / PID_CONTROL_FREQ)
-#define PID_CONTROL_INTERVAL 0.0125
+#define PID_CONTROL_INTERVAL (1 / PID_CONTROL_FREQ)
+// #define PID_CONTROL_INTERVAL 0.0125
 #define TARGET_HOME_SPEED 3.0 // cm per second
 
 // PID parameters
-#define K0 0.6 * 1.1// 0.6 works good
+#define K0 0.6// 0.6 works good
 
 // Small movement PID values
-#define PID_S_KP (0.0567 * K0 * 0.174) * 1.25// * 0.138
-#define PID_S_KI (0.00067091 * K0 * 260) *0 // * 1.45
-#define PID_S_KD (0.0011 * K0 * 0.00135)* 10.0//* 0.012
+#define PID_S_KP (0.0567 * K0 ) * 0.10// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
+#define PID_S_KI (0.00067091 * K0 ) * 1000//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
+#define PID_S_KD (0.0011 * K0 )*0.01*0.18 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
 
 // large movement PID values
-#define PID_L_KP (0.0567 * K0 * 0.3) * 0.8 // * 0.138
-#define PID_L_KI (0.00067091 * K0 * 200) *0  // * 1.45
-#define PID_L_KD (0.0011 * K0 * 0.0015) * 0.25 //* 0.012
+#define PID_L_KP (0.0567 * K0) * 0.18 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
+#define PID_L_KI (0.00067091 * K0 ) * 200// (0.00067091 * K0 * 200) *0.000005  // * 1.45
+#define PID_L_KD (0.0011 * K0)*0.01*0.25 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012 
 
-#define PID_MIN_MOVE 60 // mm
-#define PID_MAX_MOVE 100 // mm
+#define PID_MIN_MOVE 20 // mm
+#define PID_MAX_MOVE 80 // mm
 
-#define PID_STICTION 0.00 // feedforward control for stiction (WIP)
+#define PID_STICTION 0.01 // feedforward control for stiction (WIP)
 
 #define PID_KAW 0.01 // Anti-integral windup gain (WIP)
 // #define PID_BETA 0.2759 // mdp * 10 @ 80Hz
 // #define PID_BETA 0.4211 // mdp * 5 @ 80Hz
 #define PID_BETA 0.7800 // mdp * 10 @ 1kHz
-#define PID_LIM_MIN_INT -0.4
-#define PID_LIM_MAX_INT 0.4
+#define PID_LIM_MIN_INT -0.5
+#define PID_LIM_MAX_INT 0.5
 #define PID_LIM_MIN -1.0
 #define PID_LIM_MAX 1.0
+
+#define PID_STICTION_MIDDLE 0.08
+#define PID_STICTION_SIDES 0.03
 
 // PID integral separation
 #define PID_ERR_THRS_3 (40/1000.0 * KTJ)
@@ -335,6 +338,7 @@ void loop() {
                 measured_rad = pulseCount * RAD_PER_PULSE;
 
                 pid_output = PIDController_Update(&PID, wanted_rad, measured_rad);
+                
                 set_PWM(-pid_output);
 
                 if (real_abs(PID.error) < ANGLE_ERR_THRS) {
@@ -413,12 +417,13 @@ void loop() {
                     PID_move_size_mm = schedule[command_idx].solenoid_or_position - PID_prev_setpoint_mm;
                 }
 
-                PIDController_GainSchedule(&PID, &K_large, &K_small, PID_move_size_mm);
+                // PIDController_GainSchedule(&PID, &K_large, &K_small, PID_move_size_mm);
 
                 if(millis() - prev_pid_time  >= PID_CONTROL_INTERVAL*1e3){
                     prev_pid_time = millis();
 
 
+                    PIDController_GainSchedule(&PID, &K_large, &K_small, PID.error*KJT*1000.0);
                     // --- GENERATE TRIANGULAR DITHER ---
                     /*
                         To decrease the effect of static friction, we add a
@@ -481,12 +486,24 @@ void loop() {
                             command_idx++;
                             PIDController_Init(&PID);
                             set_PWM(0);
+
                             pid_error_settle_first_time_entry = 1;
                         }
                     }
                     else if (real_abs(PID.error) >= ANGLE_ERR_THRS) {
-                        set_PWM(-(pid_output+dither_val));
-    
+                        
+                        if (measured_rad*KJT*1000 >= 160 || measured_rad*KJT*1000 <= 65 ){
+                            if (PID.error > 0) set_PWM(-(pid_output + PID_STICTION_SIDES));
+                            else set_PWM(-(pid_output - PID_STICTION_SIDES));
+                        }
+
+                        else if (PID.error > 0)
+                            set_PWM(-(pid_output + PID_STICTION_MIDDLE));
+                        else
+                            set_PWM(-(pid_output - PID_STICTION_MIDDLE));
+                        pid_error_settle_first_time_entry = 1;
+                        pid_within_error_time = millis();
+                        
                         sprintf(LCD_BUFFER, "yd=%0.1f,ya=%0.1f", wanted_rad*KJT*1000, measured_rad*KJT*1000);
                         LCD_Log(LCD_BUFFER, 1);
     
