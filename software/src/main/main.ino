@@ -33,16 +33,16 @@
 #define K0 0.6// 0.6 works good
 
 // Small movement PID values
-#define PID_S_KP (0.0567 * K0 ) * 0.127// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
-#define PID_S_KI (0.00067091 * K0 ) * 2000//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
-#define PID_S_KD (0.0011 * K0 )*0.01*0.155 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
+#define PID_S_KP (0.0567 * K0 ) * 0.134// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
+#define PID_S_KI (0.00067091 * K0 ) * 1900//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
+#define PID_S_KD (0.0011 * K0 )*0.01*0.156 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
 
 // large movement PID values
 #define PID_L_KP (0.0567 * K0) * 0.12 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
-#define PID_L_KI (0.00067091 * K0 ) * 200// (0.00067091 * K0 * 200) *0.000005  // * 1.45
-#define PID_L_KD (0.0011 * K0)*0.01*0.285 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012 
+#define PID_L_KI (0.00067091 * K0 ) * 500// (0.00067091 * K0 * 200) *0.000005  // * 1.45
+#define PID_L_KD (0.0011 * K0)*0.01*0.31 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012 
 
-#define PID_MIN_MOVE 20 // mm
+#define PID_MIN_MOVE 30 // mm
 #define PID_MAX_MOVE 80 // mm
 
 #define PID_STICTION 0.01 // feedforward control for stiction (WIP)
@@ -56,8 +56,8 @@
 #define PID_LIM_MIN -1.0
 #define PID_LIM_MAX 1.0
 
-#define PID_STICTION_MIDDLE 0.057
-#define PID_STICTION_SIDES 0.0129
+#define PID_STICTION_MIDDLE 0.059
+#define PID_STICTION_SIDES 0.02
 
 // PID integral separation
 #define PID_ERR_THRS_3 (40/1000.0 * KTJ)
@@ -239,8 +239,10 @@ void loop() {
 
     static double pid_output;
     static double measured_rad;
+    static double prev_measured_rad;
     static double wanted_rad;
     static unsigned long prev_pid_time = 0;
+    static double stiction_coeff;
 
     static double   pid_within_error_time;
     static int      pid_error_settle_first_time_entry = 1;
@@ -456,6 +458,7 @@ void loop() {
                     }
 
                     wanted_rad = schedule[command_idx].solenoid_or_position * KTJ/1000.0;
+                    prev_measured_rad = measured_rad;
                     measured_rad = pulseCount * RAD_PER_PULSE;
 
                     // calculate the error first for use in the loop
@@ -492,15 +495,18 @@ void loop() {
                     }
                     else if (real_abs(PID.error) >= ANGLE_ERR_THRS) {
                         
-                        if (measured_rad*KJT*1000 >= 160 || measured_rad*KJT*1000 <= 65 ){
-                            if (PID.error > 0) set_PWM(-(pid_output + PID_STICTION_SIDES));
-                            else set_PWM(-(pid_output - PID_STICTION_SIDES));
+                        if ((measured_rad*KJT*1000 >= 185 || measured_rad*KJT*1000 <= 65) && prev_measured_rad == measured_rad){
+                            stiction_coeff = PID_STICTION_SIDES;
+                        }
+                        else if (prev_measured_rad == measured_rad){
+                            stiction_coeff = PID_STICTION_MIDDLE;
                         }
 
-                        else if (PID.error > 0)
-                            set_PWM(-(pid_output + PID_STICTION_MIDDLE));
-                        else
-                            set_PWM(-(pid_output - PID_STICTION_MIDDLE));
+                        else stiction_coeff = 0;
+
+                        if (PID.error > 0) set_PWM(-(pid_output + stiction_coeff));
+                        else set_PWM(-(pid_output - stiction_coeff));
+                        
                         pid_error_settle_first_time_entry = 1;
                         pid_within_error_time = millis();
                         
