@@ -20,7 +20,7 @@
 #define KJT 0.00097000000000000005055  // joint-to-task space: 1:10 gearbox + 17.4mm diameter pulley 
 #define KTJ 1030.9278350515462535      // task-to-joint space
 
-#define POS_ERR_THRS (4/1000.0) //   (10 /1000.0)
+#define POS_ERR_THRS (5/1000.0) //   (10 /1000.0)
 #define ANGLE_ERR_THRS (POS_ERR_THRS * KTJ)
 
 #define PWM_FREQ 20000 // 20KHz
@@ -33,14 +33,14 @@
 #define K0 0.6// 0.6 works good
 
 // Small movement PID values
-#define PID_S_KP (0.0567 * K0 ) * 0.10// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
-#define PID_S_KI (0.00067091 * K0 ) * 1000//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
-#define PID_S_KD (0.0011 * K0 )*0.01*0.18 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
+#define PID_S_KP (0.0567 * K0 ) * 0.127// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
+#define PID_S_KI (0.00067091 * K0 ) * 2000//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
+#define PID_S_KD (0.0011 * K0 )*0.01*0.155 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
 
 // large movement PID values
-#define PID_L_KP (0.0567 * K0) * 0.18 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
+#define PID_L_KP (0.0567 * K0) * 0.12 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
 #define PID_L_KI (0.00067091 * K0 ) * 200// (0.00067091 * K0 * 200) *0.000005  // * 1.45
-#define PID_L_KD (0.0011 * K0)*0.01*0.25 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012 
+#define PID_L_KD (0.0011 * K0)*0.01*0.285 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012 
 
 #define PID_MIN_MOVE 20 // mm
 #define PID_MAX_MOVE 80 // mm
@@ -56,8 +56,8 @@
 #define PID_LIM_MIN -1.0
 #define PID_LIM_MAX 1.0
 
-#define PID_STICTION_MIDDLE 0.08
-#define PID_STICTION_SIDES 0.03
+#define PID_STICTION_MIDDLE 0.057
+#define PID_STICTION_SIDES 0.0129
 
 // PID integral separation
 #define PID_ERR_THRS_3 (40/1000.0 * KTJ)
@@ -417,13 +417,13 @@ void loop() {
                     PID_move_size_mm = schedule[command_idx].solenoid_or_position - PID_prev_setpoint_mm;
                 }
 
-                // PIDController_GainSchedule(&PID, &K_large, &K_small, PID_move_size_mm);
+                 PIDController_GainSchedule(&PID, &K_large, &K_small, PID_move_size_mm);
 
                 if(millis() - prev_pid_time  >= PID_CONTROL_INTERVAL*1e3){
                     prev_pid_time = millis();
 
 
-                    PIDController_GainSchedule(&PID, &K_large, &K_small, PID.error*KJT*1000.0);
+                  //  PIDController_GainSchedule(&PID, &K_large, &K_small, PID.error*KJT*1000.0);
                     // --- GENERATE TRIANGULAR DITHER ---
                     /*
                         To decrease the effect of static friction, we add a
