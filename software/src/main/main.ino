@@ -38,11 +38,11 @@
 #define PID_S_KD (0.0011 * K0 )*0.01*0.156 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
 
 // large movement PID values
-#define PID_L_KP (0.0567 * K0) * 0.12 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
-#define PID_L_KI (0.00067091 * K0 ) * 500// (0.00067091 * K0 * 200) *0.000005  // * 1.45
+#define PID_L_KP (0.0567 * K0) * 0.13 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
+#define PID_L_KI (0.00067091 * K0 ) * 450// (0.00067091 * K0 * 200) *0.000005  // * 1.45
 #define PID_L_KD (0.0011 * K0)*0.01*0.31 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012 
 
-#define PID_MIN_MOVE 30 // mm
+#define PID_MIN_MOVE 40 // mm
 #define PID_MAX_MOVE 80 // mm
 
 #define PID_STICTION 0.01 // feedforward control for stiction (WIP)
@@ -254,6 +254,7 @@ void loop() {
     static double dither_dir = 1.0;
 
     static double song_start_time = 0; // time when song starts, used to track elapsed time for command scheduling
+    static double song_start = 0;
     static double offset = 0;
     static double song_elapsed_time; // time elapsed since start of song
     static double action_start_time = 0; // start time of each action command
@@ -324,9 +325,7 @@ void loop() {
         case(RUN_INIT):
             PIDController_Init(&PID);
 
-            song_start_time = millis()/1000.0; // convert to seconds
-            command_idx = 0;
-            state = RUN;        
+            command_idx = 0;    
 
             sprintf(LCD_BUFFER, "RUN_INIT");
             LCD_Log(LCD_BUFFER, 1);
@@ -334,9 +333,11 @@ void loop() {
             sprintf(LCD_BUFFER, "start=%0.1lf", song_start_time);
             LCD_Log(LCD_BUFFER, 2);
 
+
+            wanted_rad = INITIAL_MOTOR_POSITION_MM * KTJ/1000.0;
+            PIDController_GainSchedule(&PID, &K_large, &K_small, INITIAL_MOTOR_POSITION_MM);
             if(millis() - prev_pid_time  >= PID_CONTROL_INTERVAL*1e3){
                 prev_pid_time = millis();
-                wanted_rad = INITIAL_MOTOR_POSITION_MM * KTJ/1000.0;
                 measured_rad = pulseCount * RAD_PER_PULSE;
 
                 pid_output = PIDController_Update(&PID, wanted_rad, measured_rad);
@@ -346,6 +347,7 @@ void loop() {
                 if (real_abs(PID.error) < ANGLE_ERR_THRS) {
                     PIDController_Init(&PID);
                     set_PWM(0);
+                    state = RUN;    
                 }
 
                 sprintf(LCD_BUFFER, "yd=%0.1f,ya=%0.1f", wanted_rad*KJT*1000, measured_rad*KJT*1000);
@@ -361,6 +363,12 @@ void loop() {
             break;
 
         case(RUN):
+
+            if (song_start != 1){
+                song_start = 1;
+                song_start_time = millis()/1000.0; // convert to seconds
+
+            }
             // Command parsing and the PID control loop happen at the same interval. 
             // at 80Hz this becomes a 12.5ms delay in command parsing. 
             
