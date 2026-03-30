@@ -20,7 +20,7 @@
 #define KJT 0.00097000000000000005055  // joint-to-task space: 1:10 gearbox + 17.4mm diameter pulley 
 #define KTJ 1030.9278350515462535      // task-to-joint space
 
-#define POS_ERR_THRS (5/1000.0) //   (10 /1000.0)
+#define POS_ERR_THRS (7/1000.0) //   (10 /1000.0)
 #define ANGLE_ERR_THRS (POS_ERR_THRS * KTJ)
 
 #define PWM_FREQ 20000 // 20KHz
@@ -33,14 +33,14 @@
 #define K0 0.6// 0.6 works good
 
 // Small movement PID values
-#define PID_S_KP (0.0567 * K0 ) * 0.134// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
-#define PID_S_KI (0.00067091 * K0 ) * 1900//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
-#define PID_S_KD (0.0011 * K0 )*0.01*0.156 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
+#define PID_S_KP (0.0567 * K0 ) * 0.25// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
+#define PID_S_KI (0.00067091 * K0 ) * 500//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
+#define PID_S_KD (0.0011 * K0 )*0.01*0.18 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
 
 // large movement PID values
-#define PID_L_KP (0.0567 * K0) * 0.12 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
+#define PID_L_KP (0.0567 * K0) * 0.123 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
 #define PID_L_KI (0.00067091 * K0 ) * 450// (0.00067091 * K0 * 200) *0.000005  // * 1.45
-#define PID_L_KD (0.0011 * K0)*0.01*0.31 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012 
+#define PID_L_KD (0.0011 * K0)*0.01*0.32 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012 
 
 #define PID_MIN_MOVE 40 // mm
 #define PID_MAX_MOVE 80 // mm
@@ -319,11 +319,12 @@ void loop() {
             if (digitalRead(PROX_SENSE1) == 0) {
                 state = RUN_INIT;
                 pulseCount = 0; // Once we are finished homing set this position as 0
+                 PIDController_Init(&PID);
             }
             break;
 
         case(RUN_INIT):
-            PIDController_Init(&PID);
+           
 
             command_idx = 0;    
 
@@ -354,7 +355,6 @@ void loop() {
                 LCD_Log(LCD_BUFFER, 1);
             }
 
-            delay(500);
             lcd.setDataAddr(LCD_Line1Start);
             lcd.clear();    
             lcd.setDataAddr(LCD_Line2Start);
@@ -367,6 +367,7 @@ void loop() {
             if (song_start != 1){
                 song_start = 1;
                 song_start_time = millis()/1000.0; // convert to seconds
+                 PIDController_Init(&PID);
 
             }
             // Command parsing and the PID control loop happen at the same interval. 
