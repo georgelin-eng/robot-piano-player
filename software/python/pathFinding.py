@@ -8,8 +8,13 @@ import midi_utils
 import collections
 import math
 
-WHITE_KEY_WIDTH_CM = 2.23
+
+from calibrationmap import ABSOLUTE_KEY_MAP_CM
+
+
 HIT_TOLERANCE_CM = 1
+
+WHITE_KEY_WIDTH_CM=2.8
 
 # RH - LF Split
 ORIGIN_MIDI_PITCH = 48
@@ -23,14 +28,6 @@ RH_MAX_PITCH = 77
 WHITE_KEY_SOLENOID_SEPERATION_CM = 2.28
 BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION = 0.7
 BLACK_KEY_WIDTH = 0.9
-
-BLACK_KEY_OFFSETS_CM = {
-    1: 0 ,#-BLACK_KEY_WIDTH/3*2 + BLACK_KEY_WIDTH/2,  # C# (Shifted Left)
-    3: 0, # BLACK_KEY_WIDTH/3*2 - BLACK_KEY_WIDTH/2,  # D# (Shifted Right)
-    6: 0, #-BLACK_KEY_WIDTH/3*2 + BLACK_KEY_WIDTH/2,  # F# (Shifted Left)
-    8:  0.00,  # G# (Centered)
-    10: 0, #BLACK_KEY_WIDTH/3*2 - BLACK_KEY_WIDTH/2,   # A# (Shifted Right)
-}
 
 # offset is distance in cm from the  left edge)
 # 'type': 'w' for White Key Finger, 'b' for Black Key Finger.
@@ -67,55 +64,11 @@ def is_black_key(midi_pitch):
     return (midi_pitch % 12) in [1, 3, 6, 8, 10]
 
 
-"""
-midi_pitch: <int> pitch of specific note
-Function used to conver pitch into cm (might need to double check this I did a general case unsure if this matches exactly the midi library)
-"""
-"""
 def get_note_position_cm(midi_pitch):
-    # Relative offsets from the start of the octave (C=0)
-    octave_offsets = {
-        0: 0.0, 1: 0.5, 2: 1.0, 3: 1.5, 4: 2.0, 
-        5: 3.0, 6: 3.5, 7: 4.0, 8: 4.5, 9: 5.0, 10: 5.5, 11: 6.0
-    }
-    
-    #Gives the octave (1-7)
-    pitch_diff = midi_pitch - ORIGIN_MIDI_PITCH
-    octave = (pitch_diff // 12)
-    #Mod 12 gives the specific note
-    note_in_octave = pitch_diff % 12
-    
-    index = (octave * 7) + octave_offsets[note_in_octave]
-    return index * WHITE_KEY_WIDTH_CM
     """
-    
-    
-""" Standard left-to-right piano ruler"""
-def get_absolute_position_cm(midi_pitch):
-    octave = midi_pitch // 12
-    note_in_octave = midi_pitch % 12
-    octave_offsets = {0: 0.0, 1: 0.5, 2: 1.0, 3: 1.5, 4: 2.0, 5: 3.0, 6: 3.5, 7: 4.0, 8: 4.5, 9: 5.0, 10: 5.5, 11: 6.0}
-    index = (octave * 7) + octave_offsets[note_in_octave]
-    
-    if note_in_octave in BLACK_KEY_OFFSETS_CM:
-        # If your axis is mirrored (moving left adds distance), 
-        # you might need to flip the + or - depending on your exact zero point!
-        return index*WHITE_KEY_WIDTH_CM + BLACK_KEY_OFFSETS_CM[note_in_octave]
-    
-    return index * WHITE_KEY_WIDTH_CM
-
-# Find exactly where the home switch is physically located in absolute space
-RH_HOME_ABSOLUTE_CM = get_absolute_position_cm(RH_MAX_PITCH)
-
-"""
-    0.0 cm is the far right note (RH_MAX_PITCH).
-    Moving LEFT towards lower notes INCREASES the cm value.
-"""
-def get_note_position_cm(midi_pitch):
-    
-    abs_pos = get_absolute_position_cm(midi_pitch)
-    return RH_HOME_ABSOLUTE_CM - abs_pos
-
+    Looks up the exact physical robot coordinate from the hardware calibration file.
+    """
+    return ABSOLUTE_KEY_MAP_CM.get(midi_pitch, 0.0)
 
 """Basic Physics simulation to estimate time.
 dist_cm: Distance hand will need to travel to reach position

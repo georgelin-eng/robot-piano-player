@@ -56,8 +56,8 @@
 #define PID_LIM_MIN -1.0
 #define PID_LIM_MAX 1.0
 
-#define PID_STICTION_MIDDLE 0.059
-#define PID_STICTION_SIDES 0.02
+#define PID_STICTION_MIDDLE 0.059 * 1.03
+#define PID_STICTION_SIDES 0.04
 
 // PID integral separation
 #define PID_ERR_THRS_3 (40/1000.0 * KTJ)
@@ -259,6 +259,9 @@ void loop() {
     static double song_elapsed_time; // time elapsed since start of song
     static double action_start_time = 0; // start time of each action command
     static double action_end_time   = 0; // target end time of action
+    static double PID_settle_time;
+    static double worst_PID_settle_time = 0;
+    static double song_play_time = 0;
 
     static int action_type;  // TODO: Make this an enum
     static int command_idx = 0;
@@ -409,6 +412,7 @@ void loop() {
                 lcd.clear();    
                 state = DONE;
 
+                song_play_time = millis()/1000.0 - song_start_time;
             }
 
             // PID loop
@@ -495,6 +499,12 @@ void loop() {
                         if (millis() - pid_within_error_time >= PID_ERROR_SETTLE_MS) {
                             PID_prev_setpoint_mm = schedule[command_idx].solenoid_or_position;
 
+                            PID_settle_time = millis()/1000.0 - action_end_time - offset;
+
+                            if(PID_settle_time > worst_PID_settle_time) {
+                                worst_PID_settle_time = PID_settle_time;
+                            }
+
                             command_idx++;
                             PIDController_Init(&PID);
                             set_PWM(0);
@@ -571,10 +581,10 @@ void loop() {
 
             measured_rad = pulseCount * RAD_PER_PULSE;
 
-            sprintf(LCD_BUFFER, "DONE             ");
+            sprintf(LCD_BUFFER, "wst: %0.1f", worst_PID_settle_time);
             LCD_Log(LCD_BUFFER, 1);
 
-            sprintf(LCD_BUFFER, "ya=%0.1f       ", measured_rad);
+            sprintf(LCD_BUFFER, "total: %0.1f", song_play_time);
             LCD_Log(LCD_BUFFER, 2);
 
 
