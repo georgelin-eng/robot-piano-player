@@ -117,8 +117,9 @@ def get_valid_hand_positions(chord_data):
         chord_covered = True
         
         #If the head position is too far then its not a valid hand position
-        #if(h + 6 > get_note_position_cm(RH_MIN_PITCH and h>= 0 )):
-        #   break
+        if(h + 6 > get_note_position_cm(RH_MIN_PITCH) or h<0):
+          chord_covered = False
+          break
         
         
         for note_pos, note_is_black in chord_data:
@@ -501,8 +502,8 @@ import matplotlib.patches as patches
 
 # --- VISUALIZATION CONSTANTS ---
 VISUAL_BLACK_KEY_WIDTH = 1.2
-PIANO_HEADER_HEIGHT = 0.5
-TIME_OFFSET = 0.5 
+PIANO_HEADER_HEIGHT = 2
+TIME_OFFSET = 2.5 
 
 def plot_robot_performance(all_notes, rh_times, rh_path_cm, right_config, print_plot):
     """
@@ -519,25 +520,24 @@ def plot_robot_performance(all_notes, rh_times, rh_path_cm, right_config, print_
     ax.invert_xaxis()
     
     # 1. Setup Axes (Dynamically size based on the song length)
-    max_t = max([n.end for n in all_notes] + (rh_times if rh_times else [0]))
     ax.set_ylim(max_t + TIME_OFFSET + 1.0, -0.8)
     ax.set_xlabel("Physical Position relative to C3 (cm)", fontsize=12)
     ax.set_ylabel("Time (seconds)", fontsize=12)
     ax.set_title("Robot Performance: Left Hand (Static) & Right Hand (Mobile)", fontsize=16, pad=20)
 
-    # 2. Draw Piano Header (From C2 to C7)
+    # 2. Draw Piano Header (From C2 to F6)
     header_y = 0
     # Draw White Keys First
-    for p in range(47, 113): 
+    for p in range(24, 78): 
         pos = get_note_position_cm(p)
         if not is_black_key(p):
             ax.add_patch(patches.Rectangle((pos - WHITE_KEY_WIDTH_CM/2, header_y), WHITE_KEY_WIDTH_CM, PIANO_HEADER_HEIGHT, 
                                            ec='black', fc='#f0f0f0', zorder=1))
-            if p % 12 == 0:
-                ax.text(pos, header_y - 0.1, f"C{(p//12)-1}", ha='center', va='top', fontsize=9, color='blue')
+            #if p % 12 == 0:
+            #    ax.text(pos, header_y - 0.1, f"C{(p//12)-1}", ha='center', va='top', fontsize=9, color='blue')
                 
     # Draw Black Keys Second (So they overlay)
-    for p in range(47, 113):
+    for p in range(24, 78):
         if is_black_key(p):
             pos = get_note_position_cm(p)
             ax.add_patch(patches.Rectangle((pos - VISUAL_BLACK_KEY_WIDTH/2, header_y), VISUAL_BLACK_KEY_WIDTH, PIANO_HEADER_HEIGHT*0.65, 
@@ -545,7 +545,7 @@ def plot_robot_performance(all_notes, rh_times, rh_path_cm, right_config, print_
 
     # 3. Draw the Song Notes (The Background "Synthesia" falling blocks)
     for n in all_notes:
-        pos = get_note_position_cm(n.pitch)
+        pos = get_note_position_cm(n.pitch - 12)
         black_key = is_black_key(n.pitch)
         w = VISUAL_BLACK_KEY_WIDTH if black_key else WHITE_KEY_WIDTH_CM
         
@@ -555,6 +555,7 @@ def plot_robot_performance(all_notes, rh_times, rh_path_cm, right_config, print_
         # Color Left Hand notes Light Blue/Dark Blue
         if n.pitch < ORIGIN_MIDI_PITCH:
             color = '#1f4e79' if black_key else '#5a9bd5'
+            pos = get_note_position_cm(n.pitch - 24)  
 
         ax.add_patch(patches.Rectangle((pos - w/2, n.start + TIME_OFFSET), w, max(0.05, n.end - n.start), 
                                        ec='#999', fc=color, alpha=0.5, zorder=0))
@@ -567,8 +568,8 @@ def plot_robot_performance(all_notes, rh_times, rh_path_cm, right_config, print_
             return ""
 
         for i in range(len(rh_times) - 1):
-            curr_t, curr_p = rh_times[i] + TIME_OFFSET, rh_path_cm[i]
-            next_t, next_p = rh_times[i+1] + TIME_OFFSET, rh_path_cm[i+1]
+            curr_t, curr_p = rh_times[i] + TIME_OFFSET, rh_path_cm[i] + 7 * WHITE_KEY_WIDTH_CM
+            next_t, next_p = rh_times[i+1] + TIME_OFFSET, rh_path_cm[i+1] + 7 * WHITE_KEY_WIDTH_CM
             
             # Use your custom physics simulation here
             travel = get_travel_time(abs(next_p - curr_p))
@@ -588,18 +589,18 @@ def plot_robot_performance(all_notes, rh_times, rh_path_cm, right_config, print_
                 ax.scatter([curr_p], [dep_t], color='darkorange' if not late else 'red', marker='v' if not late else 'x', s=80, zorder=10, label=label('Departure Trigger'))
 
             # Draw Finger Strikes for this timestamp
-            active_notes = [n for n in all_notes if abs(n.start - (curr_t - TIME_OFFSET)) < 0.02 and n.pitch >= ORIGIN_MIDI_PITCH]
-            for n in active_notes:
-                n_pos = get_note_position_cm(n.pitch)
-                for f in right_config:
-                    if (is_black_key(n.pitch) and f['type'] == 'w') or (not is_black_key(n.pitch) and f['type'] == 'b'): continue
-                    if abs((curr_p + f['offset']) - n_pos) <= HIT_TOLERANCE_CM:
-                        ax.plot([curr_p + f['offset'], n_pos], [curr_t, curr_t], color='red', alpha=0.5, lw=2)
-                        ax.scatter([curr_p + f['offset']], [curr_t], color='red', s=30, zorder=5)
-                        break
+            # active_notes = [n for n in all_notes if abs(n.start - (curr_t - TIME_OFFSET)) < 0.02 and n.pitch >= ORIGIN_MIDI_PITCH]
+            # for n in active_notes:
+            #     n_pos = get_note_position_cm(n.pitch)
+            #     for f in right_config:
+            #         if (is_black_key(n.pitch) and f['type'] == 'w') or (not is_black_key(n.pitch) and f['type'] == 'b'): continue
+            #         if abs((curr_p + f['offset']) - n_pos) <= HIT_TOLERANCE_CM:
+            #             ax.plot([curr_p + f['offset'], n_pos], [curr_t, curr_t], color='red', alpha=0.5, lw=2)
+            #             ax.scatter([curr_p + f['offset']], [curr_t], color='red', s=30, zorder=5)
+            #             break
 
         # Final Hold
-        last_t, last_p = rh_times[-1] + TIME_OFFSET, rh_path_cm[-1]
+        last_t, last_p = rh_times[-1] + TIME_OFFSET, rh_path_cm[-1] + 7 * WHITE_KEY_WIDTH_CM
         ax.plot([last_p, last_p], [last_t, last_t + 0.5], color='black', lw=4, solid_capstyle='round')
 
     # 5. Draw Dynamic Deadzones and Hand Zones
@@ -607,23 +608,194 @@ def plot_robot_performance(all_notes, rh_times, rh_path_cm, right_config, print_
     # --- Middle Deadzone (The Gap Between Hands) ---
     # Because our axis is mirrored (higher cm = further left), 
     # we ADD width to get the left edge, and SUBTRACT width to get the right edge.
-    rh_left_edge = get_note_position_cm(RH_MIN_PITCH) + (WHITE_KEY_WIDTH_CM / 2)
-    lh_right_edge = get_note_position_cm(LH_MAX_PITCH) - (WHITE_KEY_WIDTH_CM / 2)
+    rh_left_edge = get_note_position_cm(RH_MIN_PITCH - 12) + (WHITE_KEY_WIDTH_CM / 2)
+    lh_right_edge = get_note_position_cm(LH_MAX_PITCH - 19) - (WHITE_KEY_WIDTH_CM / 2)
     
     ax.axvspan(lh_right_edge, rh_left_edge, color='red', alpha=0.1, hatch='//', zorder=0)
     
     mid_deadzone_center = (rh_left_edge + lh_right_edge) / 2
-    ax.text(mid_deadzone_center, 0.2, "DEADZONE (SPLIT)", color='red', alpha=0.6, fontsize=12, weight='bold', ha='center', rotation=90)
+    ax.text(mid_deadzone_center, -1, "DEADZONE (SPLIT)", color='red', alpha=0.6, fontsize=12, weight='bold', ha='center')
 
 
     # --- Dynamic Text Labels for Active Zones ---
     # Pushed 10cm deep into their respective zones so they don't overlap the red boxes
-    ax.text(lh_right_edge + 10.0, 0.2, "LEFT HAND ZONE", color='blue', alpha=0.5, fontsize=14, weight='bold', ha='center')
-    ax.text(rh_left_edge - 10.0, 0.2, "RIGHT HAND ZONE", color='black', alpha=0.5, fontsize=14, weight='bold', ha='center')
+    ax.text(lh_right_edge + 10.0, -1, "LEFT HAND ZONE", color='blue', alpha=0.5, fontsize=14, weight='bold', ha='center')
+    ax.text(rh_left_edge - 10.0, -1, "RIGHT HAND ZONE", color='black', alpha=0.5, fontsize=14, weight='bold', ha='center')
     
     # Dynamic text placement based on your origin
     #ax.text(origin_pos + 12.0, 0.2, "LEFT HAND ZONE", color='blue', alpha=0.5, fontsize=14, weight='bold', ha='center')
    # ax.text(origin_pos - 12.0, 0.2, "RIGHT HAND ZONE", color='black', alpha=0.5, fontsize=14, weight='bold', ha='center')
+
+    ax.grid(True, axis='y', alpha=0.3)
+    ax.legend(loc='lower left', fontsize=12, framealpha=0.9)
+    plt.tight_layout()
+    
+    if(print_plot == 1):
+        plt.show()
+    else: 
+        return fig
+
+def plot_piano(print_plot):
+    """
+    Plots the master timeline of the song, the static left hand, 
+    and the physical kinematic trajectory of the mobile right hand.
+    """
+    
+    
+    fig, ax = plt.subplots(figsize=(16, 5))
+    ax.invert_yaxis()
+    ax.invert_xaxis()
+    
+    # 1. Setup Axes (Dynamically size based on the song length)
+    ax.set_ylim(TIME_OFFSET + 1.0, -0.8)
+    ax.set_xlabel("", fontsize=12)
+    ax.set_ylabel("", fontsize=12)
+    ax.set_yticks([])
+    ax.set_xticks([])
+    ax.set_title("Robot Performance: Left Hand (Static) & Right Hand (Mobile)", fontsize=16, pad=20)
+
+    # 2. Draw Piano Header (From C2 to F6)
+    header_y = 0
+    # Draw White Keys First
+    for p in range(24, 78): 
+        pos = get_note_position_cm(p)
+        if not is_black_key(p):
+            ax.add_patch(patches.Rectangle((pos - WHITE_KEY_WIDTH_CM/2, header_y), WHITE_KEY_WIDTH_CM, PIANO_HEADER_HEIGHT, 
+                                           ec='black', fc='#f0f0f0', zorder=1))
+
+    # Draw Black Keys Second (So they overlay)
+    for p in range(24, 78):
+        if is_black_key(p):
+            pos = get_note_position_cm(p)
+            ax.add_patch(patches.Rectangle((pos - VISUAL_BLACK_KEY_WIDTH/2, header_y), VISUAL_BLACK_KEY_WIDTH, PIANO_HEADER_HEIGHT*0.65, 
+                                           ec='black', fc='#333333', zorder=2))
+    # 5. Draw Dynamic Deadzones and Hand Zones
+    
+    # --- Middle Deadzone (The Gap Between Hands) ---
+    # Because our axis is mirrored (higher cm = further left), 
+    # we ADD width to get the left edge, and SUBTRACT width to get the right edge.
+    rh_left_edge = get_note_position_cm(RH_MIN_PITCH - 12) + (WHITE_KEY_WIDTH_CM / 2)
+    lh_right_edge = get_note_position_cm(LH_MAX_PITCH - 19) - (WHITE_KEY_WIDTH_CM / 2)
+    
+    ax.axvspan(lh_right_edge, rh_left_edge, color='red', alpha=0.1, hatch='//', zorder=0)
+    
+    mid_deadzone_center = (rh_left_edge + lh_right_edge) / 2
+    ax.text(mid_deadzone_center, -1, "DEADZONE (SPLIT)", color='red', alpha=0.6, fontsize=12, weight='bold', ha='center')
+
+
+    # --- Dynamic Text Labels for Active Zones ---
+    # Pushed 10cm deep into their respective zones so they don't overlap the red boxes
+    ax.text(lh_right_edge + 10.0, -1, "LEFT HAND ZONE", color='blue', alpha=0.5, fontsize=14, weight='bold', ha='center')
+    ax.text(rh_left_edge - 10.0, -1, "RIGHT HAND ZONE", color='black', alpha=0.5, fontsize=14, weight='bold', ha='center')
+    
+
+    ax.grid(True, axis='y', alpha=0.3)
+    ax.legend(loc='lower left', fontsize=12, framealpha=0.9)
+    plt.tight_layout()
+    
+    if(print_plot == 1):
+        plt.show()
+    else: 
+        return fig
+
+def plot_robot_movement(all_notes, rh_times, rh_path_cm, right_config, print_plot):
+    """
+    Plots the master timeline of the song, the static left hand, 
+    and the physical kinematic trajectory of the mobile right hand.
+    """
+    
+    max_t = max([n.end for n in all_notes] + (rh_times if rh_times else [0]))
+    
+    dynamic_height = max(12.0, max_t / 2.5)
+    
+    fig, ax = plt.subplots(figsize=(16, dynamic_height))
+    ax.invert_yaxis()
+    ax.invert_xaxis()
+    
+    # 1. Setup Axes (Dynamically size based on the song length)
+    ax.set_ylim(max_t + 1.0, -0.8)
+    ax.set_xlabel("Physical Position relative to C3 (cm)", fontsize=12)
+    ax.set_ylabel("Time (seconds)", fontsize=12)
+
+
+    # 2. Draw Piano Header (From C2 to F6)
+    header_y = 0
+    # Draw White Keys First
+    for p in range(24, 78): 
+        pos = get_note_position_cm(p)
+        if not is_black_key(p):
+            ax.add_patch(patches.Rectangle((pos - WHITE_KEY_WIDTH_CM/2, header_y), WHITE_KEY_WIDTH_CM, 0, 
+                                           ec='white', fc='#f0f0f0', zorder=0))
+            #if p % 12 == 0:
+            #    ax.text(pos, header_y - 0.1, f"C{(p//12)-1}", ha='center', va='top', fontsize=9, color='blue')
+                
+    # Draw Black Keys Second (So they overlay)
+    for p in range(24, 78):
+        if is_black_key(p):
+            pos = get_note_position_cm(p)
+            ax.add_patch(patches.Rectangle((pos - VISUAL_BLACK_KEY_WIDTH/2, header_y), VISUAL_BLACK_KEY_WIDTH, 0, 
+                                           ec='white', fc='#333333', zorder=0))
+
+
+    # 3. Draw the Song Notes (The Background "Synthesia" falling blocks)
+    for n in all_notes:
+        pos = get_note_position_cm(n.pitch - 12)
+        black_key = is_black_key(n.pitch)
+        w = VISUAL_BLACK_KEY_WIDTH if black_key else WHITE_KEY_WIDTH_CM
+        
+        # Color Right Hand notes Grey/Dark Grey
+        color = '#888888' if black_key else '#dddddd'
+        
+        # Color Left Hand notes Light Blue/Dark Blue
+        if n.pitch < ORIGIN_MIDI_PITCH:
+            color = '#1f4e79' if black_key else '#5a9bd5'
+            pos = get_note_position_cm(n.pitch - 24)  
+
+        ax.add_patch(patches.Rectangle((pos - w/2, n.start), w, max(0.05, n.end - n.start), 
+                                       ec='#999', fc=color, alpha=0.5, zorder=0))
+
+    # 4. Draw Right Hand Motor Trajectory (The solid black line)
+    if rh_times and rh_path_cm:
+        added_labels = set()
+        def label(name):
+            if name not in added_labels: added_labels.add(name); return name
+            return ""
+
+        for i in range(len(rh_times) - 1):
+            curr_t, curr_p = rh_times[i] , rh_path_cm[i] + 7 * WHITE_KEY_WIDTH_CM
+            next_t, next_p = rh_times[i+1] , rh_path_cm[i+1] + 7 * WHITE_KEY_WIDTH_CM
+            
+            # Use your custom physics simulation here
+            travel = get_travel_time(abs(next_p - curr_p))
+            ideal_dep = next_t - travel
+            
+            # Reality check: Are we late?
+            late = ideal_dep < curr_t
+            dep_t = curr_t if late else ideal_dep
+            arr_t = curr_t + travel if late else next_t
+
+            # Draw Hold
+            ax.plot([curr_p, curr_p], [curr_t, dep_t], color='black', lw=4, solid_capstyle='round', label=label('Motor Sustain'))
+            
+            # Draw Move
+            if abs(next_p - curr_p) > 0:
+                ax.plot([curr_p, next_p], [dep_t, arr_t], color='red' if late else '#00aa00', ls='--' if late else ':', lw=2, label=label('Motor Travel'))
+                ax.scatter([curr_p], [dep_t], color='darkorange' if not late else 'red', marker='v' if not late else 'x', s=80, zorder=10, label=label('Departure Trigger'))
+
+
+        # Final Hold
+        last_t, last_p = rh_times[-1] , rh_path_cm[-1] + 7 * WHITE_KEY_WIDTH_CM
+        ax.plot([last_p, last_p], [last_t, last_t + 0.5], color='black', lw=4, solid_capstyle='round')
+
+    # 5. Draw Dynamic Deadzones and Hand Zones
+    
+    # --- Middle Deadzone (The Gap Between Hands) ---
+    # Because our axis is mirrored (higher cm = further left), 
+    # we ADD width to get the left edge, and SUBTRACT width to get the right edge.
+    rh_left_edge = get_note_position_cm(RH_MIN_PITCH - 12) + (WHITE_KEY_WIDTH_CM / 2)
+    lh_right_edge = get_note_position_cm(LH_MAX_PITCH - 19) - (WHITE_KEY_WIDTH_CM / 2)
+    
+    ax.axvspan(lh_right_edge, rh_left_edge, color='red', alpha=0.1, hatch='//', zorder=0)
 
     ax.grid(True, axis='y', alpha=0.3)
     ax.legend(loc='lower left', fontsize=12, framealpha=0.9)
@@ -685,7 +857,7 @@ def compile_cnc_schedule(midi_filepath, right_hand_config):
             left_config=LEFT_FINGERS
         )
         
-        fig = plot_robot_performance(
+        fig = plot_robot_movement(
             all_notes=all_notes, 
             rh_times=rh_times, 
             rh_path_cm=rh_path_cm, 

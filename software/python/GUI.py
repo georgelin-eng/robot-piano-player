@@ -6,7 +6,7 @@ import sys
 # Matplotlib integration for Tkinter
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-from pathFinding import compile_cnc_schedule 
+from pathFinding import compile_cnc_schedule, plot_piano 
 
 class RedirectConsole:
     def __init__(self, text_widget):
@@ -23,6 +23,10 @@ class RobotPianoGUI:
         self.root = root
         self.root.title("Robot Piano CNC Post-Processor")
         self.root.geometry("1000x800")
+        self.original_stdout = sys.stdout
+        
+        # Set up window close handler
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         # --- TABS SETUP ---
         self.notebook = ttk.Notebook(root)
@@ -40,6 +44,7 @@ class RobotPianoGUI:
         self.setup_code_tab()
         
         self.current_canvas = None # Holds the matplotlib widget
+        self.header_canvas = None # Holds the header matplotlib widget
 
     def setup_main_tab(self):
         # --- 1. SONG SELECTION ---
@@ -103,24 +108,35 @@ class RobotPianoGUI:
         self.text_code.pack(side="left", fill="both", expand=True, padx=5, pady=5)
         scrollbar_code.config(command=self.text_code.yview)
 
-        # --- PLOT TAB SCROLLING (NEW) ---
-        # To make a plot scrollable in Tkinter, we have to put it inside a Canvas
+        # --- PLOT TAB LAYOUT ---
+        # Create a header frame for the frozen piano layout
+        self.plot_header_frame = tk.Frame(self.tab_plot, bg="white", height=200)
+        self.plot_header_frame.pack(fill="x", padx=0, pady=0)
+        self.plot_header_frame.pack_propagate(False)  # Fixed height
+
+        # Create scrollable canvas for the main plot
         self.plot_canvas = tk.Canvas(self.tab_plot, bg="white")
-        scrollbar_plot = ttk.Scrollbar(self.tab_plot, orient="vertical", command=self.plot_canvas.yview)
-        
+        scrollbar_plot_y = ttk.Scrollbar(self.tab_plot, orient="vertical", command=self.plot_canvas.yview)
+
         self.plot_scrollable_frame = ttk.Frame(self.plot_canvas)
-        
+
         # This tells the canvas to update its scrollable area whenever the plot changes size
         self.plot_scrollable_frame.bind(
             "<Configure>",
             lambda e: self.plot_canvas.configure(scrollregion=self.plot_canvas.bbox("all"))
         )
-        
-        self.plot_canvas.create_window((0, 0), window=self.plot_scrollable_frame, anchor="nw")
-        self.plot_canvas.configure(yscrollcommand=scrollbar_plot.set)
-        
+
+        self.plot_window = self.plot_canvas.create_window((0, 0), window=self.plot_scrollable_frame, anchor="nw")
+        self.plot_canvas.configure(yscrollcommand=scrollbar_plot_y.set)
+
+        # Make the frame expand to fill canvas width
+        self.plot_canvas.bind(
+            "<Configure>",
+            lambda e: self.plot_canvas.itemconfig(self.plot_window, width=e.width)
+        )
+
         self.plot_canvas.pack(side="left", fill="both", expand=True)
-        scrollbar_plot.pack(side="right", fill="y")
+        scrollbar_plot_y.pack(side="right", fill="y")
 
     def enforce_limit(self, changed_id):
         """Prevents the user from equipping more than 5 solenoids."""
@@ -128,6 +144,19 @@ class RobotPianoGUI:
         if active_count > 5:
             messagebox.showwarning("Hardware Limit", "Your carriage can only hold a maximum of 5 solenoids!")
             self.finger_vars[changed_id].set(0) # Uncheck the one they just clicked
+
+    def on_closing(self):
+        """Handle window close event - cleanup matplotlib figures and exit."""
+        import matplotlib.pyplot as plt
+        
+        # Restore stdout
+        sys.stdout = self.original_stdout
+        
+        # Close all matplotlib figures to free resources
+        plt.close('all')
+        
+        # Destroy the window and quit
+        self.root.destroy()
 
     def browse_file(self):
         filepath = filedialog.askopenfilename(filetypes=[("MIDI Files", "*.mid *.midi")])
@@ -162,8 +191,24 @@ class RobotPianoGUI:
             # Remove the old plot if it exists
             if self.current_canvas:
                 self.current_canvas.get_tk_widget().destroy()
+            if self.header_canvas:
+                self.header_canvas.get_tk_widget().destroy()
                 
-            # Inject the plot into the new SCROLLABLE frame instead of the raw tab
+            # Make the plot figure fit the available canvas width before embedding
+            canvas_width = self.plot_canvas.winfo_width() if self.plot_canvas.winfo_width() > 0 else 800
+            dpi = fig.get_dpi() if hasattr(fig, 'get_dpi') else 100
+            fig.set_size_inches(canvas_width / dpi, fig.get_size_inches()[1], forward=True)
+
+            # --- CREATE HEADER (Piano Layout) ---
+            # Use plot_piano function to create the header
+            header_fig = plot_piano(print_plot=0)  # Get figure without showing
+            
+            # Embed the matplotlib figure directly in the header frame
+            self.header_canvas = FigureCanvasTkAgg(header_fig, master=self.plot_header_frame)
+            self.header_canvas.draw()
+            self.header_canvas.get_tk_widget().pack(fill="x", padx=(53, 15), pady=0, expand=True)
+
+            # Inject the plot into the scrollable frame
             self.current_canvas = FigureCanvasTkAgg(fig, master=self.plot_scrollable_frame)
             self.current_canvas.draw()
             self.current_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
@@ -172,7 +217,7 @@ class RobotPianoGUI:
             print("Check the 'Kinematics Plot' and 'C-Code Schedule' tabs!")
             
             # Automatically switch to the plot tab so the user sees the result!
-            self.notebook.select(self.tab_plot)
+            #self.notebook.select(self.tab_plot)
             
         except Exception as e:
             print(f"\n[!] COMPILER CRASHED: {e}")
@@ -181,3 +226,5 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = RobotPianoGUI(root)
     root.mainloop()
+    import sys
+    sys.exit(0)

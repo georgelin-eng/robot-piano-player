@@ -3,11 +3,11 @@ RIGHT_WALL_MIDI_PITCH = 77 # The absolute right-most key on your board
 
 # The physical offsets (Positive = Right, Negative = Left)
 BLACK_KEY_OFFSETS_CM = {
-    1: -(WHITE_KEY_WIDTH_CM / 10),  
-    3:  (WHITE_KEY_WIDTH_CM / 10),  
-    6: -(WHITE_KEY_WIDTH_CM / 7),   
+    1: 0, #-(WHITE_KEY_WIDTH_CM / 10),  
+    3: 0, #(WHITE_KEY_WIDTH_CM / 10),  
+    6: 0, #-(WHITE_KEY_WIDTH_CM / 7),   
     8:  0.00,                
-    10: (WHITE_KEY_WIDTH_CM / 7)    
+    10: 0, #(WHITE_KEY_WIDTH_CM / 7)    
 }
 
 def calculate_standard_pos(pitch):
@@ -24,7 +24,7 @@ def calculate_standard_pos(pitch):
 robot_map = {}
 wall_standard_cm = calculate_standard_pos(RIGHT_WALL_MIDI_PITCH)
 
-for pitch in range(36, 78): 
+for pitch in range(24, 78): 
     standard_cm = calculate_standard_pos(pitch)
     # Convert to mirrored robot coordinate (Right Wall = 0.0)
     robot_cm = wall_standard_cm - standard_cm 
