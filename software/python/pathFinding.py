@@ -8,29 +8,26 @@ import midi_utils
 import collections
 import math
 
-WHITE_KEY_WIDTH_CM = 2.23
+
+from calibrationmap import ABSOLUTE_KEY_MAP_CM
+
+
 HIT_TOLERANCE_CM = 1
 
+WHITE_KEY_WIDTH_CM=2.28
+
 # RH - LF Split
-ORIGIN_MIDI_PITCH = 48
-SPLIT_POINT = 48
+ORIGIN_MIDI_PITCH = 60
+SPLIT_POINT = 60
 
-LH_MAX_PITCH = 47
+LH_MAX_PITCH = 59
 
-RH_MIN_PITCH = 52      
-RH_MAX_PITCH = 77
+RH_MIN_PITCH = 65    
+RH_MAX_PITCH = 89
 
 WHITE_KEY_SOLENOID_SEPERATION_CM = 2.28
 BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION = 0.7
 BLACK_KEY_WIDTH = 0.9
-
-BLACK_KEY_OFFSETS_CM = {
-    1: 0 ,#-BLACK_KEY_WIDTH/3*2 + BLACK_KEY_WIDTH/2,  # C# (Shifted Left)
-    3: 0, # BLACK_KEY_WIDTH/3*2 - BLACK_KEY_WIDTH/2,  # D# (Shifted Right)
-    6: 0, #-BLACK_KEY_WIDTH/3*2 + BLACK_KEY_WIDTH/2,  # F# (Shifted Left)
-    8:  0.00,  # G# (Centered)
-    10: 0, #BLACK_KEY_WIDTH/3*2 - BLACK_KEY_WIDTH/2,   # A# (Shifted Right)
-}
 
 # offset is distance in cm from the  left edge)
 # 'type': 'w' for White Key Finger, 'b' for Black Key Finger.
@@ -40,8 +37,8 @@ ROBOT_FINGERS = [
     {'id': 2, 'offset': 2*WHITE_KEY_SOLENOID_SEPERATION_CM, 'type': 'w'},   
     {'id': 3, 'offset': 1*WHITE_KEY_SOLENOID_SEPERATION_CM + BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION, 'type': 'b'},  
     {'id': 4, 'offset': 1*WHITE_KEY_SOLENOID_SEPERATION_CM, 'type': 'w'},
-#    {'id': 5, 'offset': BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION, 'type': 'w'}
-#    {'id': 6, 'offset': 0*WHITE_KEY_WIDTH_CM, 'type': 'w'}
+#    {'id': 5, 'offset': BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION, 'type': 'b'}
+   # {'id': 6, 'offset': 0*WHITE_KEY_WIDTH_CM, 'type': 'w'}
 ]
 
 LEFT_FINGERS = {
@@ -67,55 +64,11 @@ def is_black_key(midi_pitch):
     return (midi_pitch % 12) in [1, 3, 6, 8, 10]
 
 
-"""
-midi_pitch: <int> pitch of specific note
-Function used to conver pitch into cm (might need to double check this I did a general case unsure if this matches exactly the midi library)
-"""
-"""
 def get_note_position_cm(midi_pitch):
-    # Relative offsets from the start of the octave (C=0)
-    octave_offsets = {
-        0: 0.0, 1: 0.5, 2: 1.0, 3: 1.5, 4: 2.0, 
-        5: 3.0, 6: 3.5, 7: 4.0, 8: 4.5, 9: 5.0, 10: 5.5, 11: 6.0
-    }
-    
-    #Gives the octave (1-7)
-    pitch_diff = midi_pitch - ORIGIN_MIDI_PITCH
-    octave = (pitch_diff // 12)
-    #Mod 12 gives the specific note
-    note_in_octave = pitch_diff % 12
-    
-    index = (octave * 7) + octave_offsets[note_in_octave]
-    return index * WHITE_KEY_WIDTH_CM
     """
-    
-    
-""" Standard left-to-right piano ruler"""
-def get_absolute_position_cm(midi_pitch):
-    octave = midi_pitch // 12
-    note_in_octave = midi_pitch % 12
-    octave_offsets = {0: 0.0, 1: 0.5, 2: 1.0, 3: 1.5, 4: 2.0, 5: 3.0, 6: 3.5, 7: 4.0, 8: 4.5, 9: 5.0, 10: 5.5, 11: 6.0}
-    index = (octave * 7) + octave_offsets[note_in_octave]
-    
-    if note_in_octave in BLACK_KEY_OFFSETS_CM:
-        # If your axis is mirrored (moving left adds distance), 
-        # you might need to flip the + or - depending on your exact zero point!
-        return index*WHITE_KEY_WIDTH_CM + BLACK_KEY_OFFSETS_CM[note_in_octave]
-    
-    return index * WHITE_KEY_WIDTH_CM
-
-# Find exactly where the home switch is physically located in absolute space
-RH_HOME_ABSOLUTE_CM = get_absolute_position_cm(RH_MAX_PITCH)
-
-"""
-    0.0 cm is the far right note (RH_MAX_PITCH).
-    Moving LEFT towards lower notes INCREASES the cm value.
-"""
-def get_note_position_cm(midi_pitch):
-    
-    abs_pos = get_absolute_position_cm(midi_pitch)
-    return RH_HOME_ABSOLUTE_CM - abs_pos
-
+    Looks up the exact physical robot coordinate from the hardware calibration file.
+    """
+    return ABSOLUTE_KEY_MAP_CM.get(midi_pitch, 0.0)
 
 """Basic Physics simulation to estimate time.
 dist_cm: Distance hand will need to travel to reach position
@@ -551,12 +504,17 @@ VISUAL_BLACK_KEY_WIDTH = 1.2
 PIANO_HEADER_HEIGHT = 0.5
 TIME_OFFSET = 0.5 
 
-def plot_robot_performance(all_notes, rh_times, rh_path_cm, right_config):
+def plot_robot_performance(all_notes, rh_times, rh_path_cm, right_config, print_plot):
     """
     Plots the master timeline of the song, the static left hand, 
     and the physical kinematic trajectory of the mobile right hand.
     """
-    fig, ax = plt.subplots(figsize=(16, 12))
+    
+    max_t = max([n.end for n in all_notes] + (rh_times if rh_times else [0]))
+    
+    dynamic_height = max(12.0, max_t / 2.5)
+    
+    fig, ax = plt.subplots(figsize=(16, dynamic_height))
     ax.invert_yaxis()
     ax.invert_xaxis()
     
@@ -570,7 +528,7 @@ def plot_robot_performance(all_notes, rh_times, rh_path_cm, right_config):
     # 2. Draw Piano Header (From C2 to C7)
     header_y = 0
     # Draw White Keys First
-    for p in range(36, 97): 
+    for p in range(47, 113): 
         pos = get_note_position_cm(p)
         if not is_black_key(p):
             ax.add_patch(patches.Rectangle((pos - WHITE_KEY_WIDTH_CM/2, header_y), WHITE_KEY_WIDTH_CM, PIANO_HEADER_HEIGHT, 
@@ -579,7 +537,7 @@ def plot_robot_performance(all_notes, rh_times, rh_path_cm, right_config):
                 ax.text(pos, header_y - 0.1, f"C{(p//12)-1}", ha='center', va='top', fontsize=9, color='blue')
                 
     # Draw Black Keys Second (So they overlay)
-    for p in range(36, 97):
+    for p in range(47, 113):
         if is_black_key(p):
             pos = get_note_position_cm(p)
             ax.add_patch(patches.Rectangle((pos - VISUAL_BLACK_KEY_WIDTH/2, header_y), VISUAL_BLACK_KEY_WIDTH, PIANO_HEADER_HEIGHT*0.65, 
@@ -657,13 +615,6 @@ def plot_robot_performance(all_notes, rh_times, rh_path_cm, right_config):
     mid_deadzone_center = (rh_left_edge + lh_right_edge) / 2
     ax.text(mid_deadzone_center, 0.2, "DEADZONE (SPLIT)", color='red', alpha=0.6, fontsize=12, weight='bold', ha='center', rotation=90)
 
-    # --- Upper Deadzone (Past the Home Switch) ---
-    # Anything physically to the right of the highest playable note (into negative space)
-    rh_right_edge = get_note_position_cm(RH_MAX_PITCH) - (WHITE_KEY_WIDTH_CM / 2)
-    out_of_bounds_edge = rh_right_edge - 8.0 # Extend it visually past the 0 mark
-    
-    ax.axvspan(rh_right_edge, out_of_bounds_edge, color='red', alpha=0.15, hatch='\\\\', zorder=0)
-    ax.text(rh_right_edge - 2.0, 0.2, "DEADZONE (OUT OF BOUNDS)", color='red', alpha=0.6, fontsize=12, weight='bold', ha='center', rotation=90)
 
     # --- Dynamic Text Labels for Active Zones ---
     # Pushed 10cm deep into their respective zones so they don't overlap the red boxes
@@ -677,4 +628,75 @@ def plot_robot_performance(all_notes, rh_times, rh_path_cm, right_config):
     ax.grid(True, axis='y', alpha=0.3)
     ax.legend(loc='lower left', fontsize=12, framealpha=0.9)
     plt.tight_layout()
-    plt.show()
+    
+    if(print_plot == 1):
+        plt.show()
+    else: 
+        return fig
+
+import os
+
+def compile_cnc_schedule(midi_filepath, right_hand_config):
+    # --- 1. SYNC THE MATH ---
+    # Force Pathfinder to obey the GUI finger config
+    global ROBOT_FINGERS
+    ROBOT_FINGERS = right_hand_config
+
+    print(f"GUI selected file: {midi_filepath}")
+    
+    # --- 2. OS PATH FILTERING & TELEPORTATION ---
+    base_name = os.path.basename(midi_filepath)
+    song_name, ext = os.path.splitext(base_name)
+    
+    # Teleport Python's working directory so midi_utils can find the config/ folder
+    target_dir = os.path.dirname(os.path.dirname(midi_filepath))
+    os.chdir(target_dir)
+    print(f"Re-aligned working directory to: {target_dir}")
+    
+    # --- 3. EXTRACT & PREVIEW ---
+    # Extract ALL notes using your untouched utility
+    all_notes = midi_utils.midi_to_notes(song_name) 
+    #all_notes = midi_utils.fit_song_into_keyboard(all_notes)
+    
+    # Save the trimmed preview file
+    midi_utils.notes_to_midi(all_notes, filename=f"songs/{song_name}_preview.mid")
+    print(f"Saved trimmed preview to songs/{song_name}_preview.mid")
+    
+    # --- 4. STRICT PRE-FILTERING ---
+    left_hand_notes = [n for n in all_notes if n.pitch <= LH_MAX_PITCH]
+    right_hand_notes = [n for n in all_notes if RH_MIN_PITCH <= n.pitch <= RH_MAX_PITCH]
+    
+    print(f"Found {len(left_hand_notes)} bass notes and {len(right_hand_notes)} melody notes.")
+    
+    # --- 5. PATHFINDING & COMPILATION ---
+    print("Running pathfinding algorithm on Right Hand...")
+    rh_times, rh_path_cm = find_best_time_path(right_hand_notes)
+    
+    if not rh_times:
+        print("WARNING: No valid path found! The chord might be physically impossible to span.")
+    else:
+        print("Path found. Generating C code...")
+        c_code = generate_c_command_array(
+            left_notes=left_hand_notes, 
+            right_notes=right_hand_notes, 
+            right_times=rh_times, 
+            right_path_cm=rh_path_cm, 
+            right_config=ROBOT_FINGERS, 
+            left_config=LEFT_FINGERS
+        )
+        
+        fig = plot_robot_performance(
+            all_notes=all_notes, 
+            rh_times=rh_times, 
+            rh_path_cm=rh_path_cm, 
+            right_config=ROBOT_FINGERS,
+            print_plot = 0
+        )
+        
+        out_path = "robot_schedule.h"
+        with open(out_path, "w") as f:
+            f.write(c_code)
+            
+        print(f"✅ Successfully saved C array to '{out_path}'!")
+        
+        return c_code, fig
