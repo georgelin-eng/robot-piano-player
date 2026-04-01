@@ -2,6 +2,7 @@
 #include "RP2040_PWM.h"        // PWM
 #include "pins.h"              // pin to variable mappings
 #include "commands.h"          // command table
+#include "stiction_map.h"          // command table
 //#include "cust_commands.h"        // command table
 // #include "led_commands.h" 
 #include "peripherals.h"       // ISRs for interacting with peripherals
@@ -131,6 +132,12 @@ void setup() {
     pinMode(PROX_SENSE2, INPUT); // Proximity sensor2
 
     // Count positive and negative edges encoder to achieve max 64CPR resolution
+
+    // BUG: An interrupt source is handeled by one ISR. Calling again to ENCA_pin
+    // overrides the previous attachInterrupt. We get 0.19mm resolution, not 0.1mm,
+    // interrupts on CHANGE requires some more complicated bitmasking. This is why RAD_PER_PULSE
+    // must be multiplied by 2 since we have 32 CPR instead of 64 as we miss rising edges. 
+    // trade off at this point in development isn't worth it as it works for our purposes. 
     attachInterrupt(digitalPinToInterrupt(ENCA_pin), A_posedge, RISING);
     attachInterrupt(digitalPinToInterrupt(ENCA_pin), A_negedge, FALLING);
     attachInterrupt(digitalPinToInterrupt(ENCB_pin), B_posedge, RISING);
@@ -615,7 +622,7 @@ void loop() {
 
 void set_PWM(float output) {
     sprintf(MSG_BUFFER, "output= %0.2f", output);
-    Log("PWM", MSG_BUFFER, LOG_HIGH);
+    Log("PWM", MSG_BUFFER, LOG_DEBUG);
 
     int pwm_dc = (int) (output * 100);
 
@@ -625,7 +632,7 @@ void set_PWM(float output) {
 
 void set_left_PWM(int pwm_dc) {
     sprintf(MSG_BUFFER, "Left PWM = %d", pwm_dc);
-    Log("LEFT VAL", MSG_BUFFER, LOG_HIGH);
+    Log("LEFT VAL", MSG_BUFFER, LOG_DEBUG);
     PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100 - pwm_dc);
     PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100);
 
@@ -633,18 +640,38 @@ void set_left_PWM(int pwm_dc) {
 
 void set_right_PWM(int pwm_dc) {
     sprintf(MSG_BUFFER, "Right PWM = %d", pwm_dc);
-    Log("RIGHT VAL", MSG_BUFFER, LOG_HIGH);
+    Log("RIGHT VAL", MSG_BUFFER, LOG_DEBUG);
     PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100);
     PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100 - pwm_dc);
 
 }
 
-/*
-    We use a single switch statement to turn solenoids on and off
-    Since the mappings of finger number to address aren't linear
-    we use a case statement as a dictionary with the mappings defined in pins.h
+double set_PID_(double measured_rad, prev_measured_rad) {
+    double stiction_coeff;
 
-*/
+    // our LUT is ordered therefore search can be O(logN) instead of an if else chain which is O(N)
+    if (measured_rad == prev_measured_rad) {
+        // early exit on large value
+        if (measured_rad > 250*KTJ/1000.0) {
+            return lut[LUT_SIZE-1].stiction_pwm;
+        }
+
+        for (int i = 0; i < LUT_SIZE; i++) {
+            // assumes ordering is small to large
+            if (measured_rad < lut[i].measured_rad) {
+                return = lut[i].stiction_pwm;
+            }
+
+        }
+        return 0.0;
+    }
+    else {
+        return 0.0;
+    }
+}
+
+
+                        else set_PWM(-(pid_output - stiction_coeff));                                                           */
 void set_note_state (int ith_finger, bool state){ 
     // return;
 
@@ -756,6 +783,7 @@ void set_note_state (int ith_finger, bool state){
         }
     }
 }
+
 
 
 void Log(const char* ID, const char *MSG, enum eLogLevel level) {

@@ -1,12 +1,10 @@
 #include <stdio.h>             // Standard IO
 #include "RP2040_PWM.h"        // PWM
-#include "pins.h"              // pin to variable mappings
-#include "commands.h"          // command table
-//#include "cust_commands.h"        // command table
-// #include "led_commands.h" 
-#include "peripherals.h"       // ISRs for interacting with peripherals
-#include "PID.h"               // PID functions
-#include "logging.h"           // logging functions
+#include "../main/pins.h"              // pin to variable mappings
+#include "../main/commands.h"          // command table
+#include "../main/peripherals.h"       // ISRs for interacting with peripherals
+#include "../main/PID.h"               // PID functions
+#include "../main/logging.h"           // logging functions
 #include <Adafruit_MCP23X17.h> // I2C expander library
 
 #include <LCD1602.h>           // LCD library
@@ -307,7 +305,7 @@ void loop() {
         case(RUN): {
 
             static unsigned long last_increment_time = 0;
-            static int test_pwm = 0;
+            static double test_pwm = 0;
             static double start_test_rad = 0;
             static int sub_state = 0; 
 
@@ -329,7 +327,7 @@ void loop() {
 
                 case 1: 
                     if (millis() - last_increment_time > 15) { 
-                        test_pwm += 1;
+                        test_pwm += 0.25;
 
                         if (test_pwm > 100) test_pwm = 100; 
 
@@ -343,8 +341,8 @@ void loop() {
 
                         set_left_PWM(0); 
                         
-                        sprintf(MSG_BUFFER, "Pos: %0.2f rad, Stic PWM: %d", measured_rad, test_pwm);
-                        Log("STICTION_MAP", MSG_BUFFER, LOG_HIGH);
+                        sprintf(MSG_BUFFER, "Pos: %0.2f rad, Stic PWM: %0.2lf", measured_rad, test_pwm);
+                        Log("STICTION_MAP", MSG_BUFFER, LOG_NONE);
 
                         last_increment_time = millis();
                         sub_state = 2;
@@ -364,15 +362,6 @@ void loop() {
             set_left_PWM(0);
             set_right_PWM(0);
 
-            measured_rad = pulseCount * RAD_PER_PULSE;
-
-            sprintf(LCD_BUFFER, "wst: %0.1f", worst_PID_settle_time);
-            LCD_Log(LCD_BUFFER, 1);
-
-            sprintf(LCD_BUFFER, "total: %0.1f", song_play_time);
-            LCD_Log(LCD_BUFFER, 2);
-
-
             for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
                 set_note_state(i, LOW);
             }
@@ -388,25 +377,19 @@ void loop() {
 
 void set_PWM(float output) {
     sprintf(MSG_BUFFER, "output= %0.2f", output);
-    Log("PWM", MSG_BUFFER, LOG_HIGH);
+    Log("PWM", MSG_BUFFER, LOG_DEBUG);
 
-    int pwm_dc = (int) (output * 100);
-
-    if (pwm_dc > 0) set_right_PWM(pwm_dc);
-    else            set_left_PWM(abs(pwm_dc));
+    if (output > 0) set_right_PWM(output*100);
+    else            set_left_PWM(real_abs(output*100));
 }
 
-void set_left_PWM(int pwm_dc) {
-    sprintf(MSG_BUFFER, "Left PWM = %d", pwm_dc);
-    Log("LEFT VAL", MSG_BUFFER, LOG_HIGH);
+void set_left_PWM(double pwm_dc) {
     PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100 - pwm_dc);
     PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100);
 
 }
 
-void set_right_PWM(int pwm_dc) {
-    sprintf(MSG_BUFFER, "Right PWM = %d", pwm_dc);
-    Log("RIGHT VAL", MSG_BUFFER, LOG_HIGH);
+void set_right_PWM(double pwm_dc) {
     PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100);
     PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100 - pwm_dc);
 

@@ -12,7 +12,7 @@ import math
 from calibrationmap import ABSOLUTE_KEY_MAP_CM
 
 
-HIT_TOLERANCE_CM = 1
+HIT_TOLERANCE_CM = 0
 
 WHITE_KEY_WIDTH_CM=2.28
 
@@ -26,7 +26,7 @@ RH_MIN_PITCH = 65
 RH_MAX_PITCH = 89
 
 WHITE_KEY_SOLENOID_SEPERATION_CM = 2.28
-BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION = 0.7
+BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION = 1.14
 BLACK_KEY_WIDTH = 0.9
 
 # offset is distance in cm from the  left edge)
@@ -38,7 +38,7 @@ ROBOT_FINGERS = [
     {'id': 3, 'offset': 1*WHITE_KEY_SOLENOID_SEPERATION_CM + BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION, 'type': 'b'},  
     {'id': 4, 'offset': 1*WHITE_KEY_SOLENOID_SEPERATION_CM, 'type': 'w'},
 #    {'id': 5, 'offset': BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION, 'type': 'b'}
-   # {'id': 6, 'offset': 0*WHITE_KEY_WIDTH_CM, 'type': 'w'}
+     {'id': 6, 'offset': 0*WHITE_KEY_WIDTH_CM, 'type': 'w'}
 ]
 
 LEFT_FINGERS = {
@@ -99,6 +99,8 @@ def get_valid_hand_positions(chord_data):
     valid_hs = []
     potential_hs = set()
     
+    max_finger_offset = max([f['offset'] for f in ROBOT_FINGERS])
+    
     # Try to align every COMPATIBLE finger with every note
     for note_pos, note_is_black in chord_data:
         for finger in ROBOT_FINGERS:
@@ -117,9 +119,9 @@ def get_valid_hand_positions(chord_data):
         chord_covered = True
         
         #If the head position is too far then its not a valid hand position
-        if(h + 6 > get_note_position_cm(RH_MIN_PITCH) or h<0):
-          chord_covered = False
-          break
+        if(h + max_finger_offset > get_note_position_cm(RH_MIN_PITCH) or h < 0):
+           chord_covered = False
+           continue
         
         
         for note_pos, note_is_black in chord_data:
@@ -134,7 +136,7 @@ def get_valid_hand_positions(chord_data):
 
                 # Check For distance, ideally this hits 0 tolerance is there as a parameter we can adjust in the future
                 finger_loc = h + finger['offset']
-                if abs(note_pos - finger_loc) <= HIT_TOLERANCE_CM:
+                if abs(note_pos - finger_loc) <= (HIT_TOLERANCE_CM + 0.01):
                     note_hit = True
                     break 
             
@@ -392,7 +394,7 @@ def apply_actuation_limits(commands, min_actuation_time_sec):
             
 def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm, right_config, left_config):
     
-    initial_setup_mm = int(right_path_cm[0] * 10.0) if right_path_cm else 0
+    initial_setup_mm = round(float(right_path_cm[0] * 10.0),3) if right_path_cm else 0
     #  BUILD THE MASTER TIMELINE
     # Combine all notes and extract every unique start time in the whole song
     all_notes = left_notes + right_notes
@@ -426,7 +428,7 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
                 
                 commands.append({
                     'action': 'MOVE',
-                    'solenoid_or_position': int(target_pos * 10.0), 
+                    'solenoid_or_position': round(float(target_pos * 10.0),3), 
                     'start': actual_departure,
                     'end': actual_departure + travel_duration
                 })

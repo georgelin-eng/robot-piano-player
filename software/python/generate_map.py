@@ -1,5 +1,7 @@
+import pathFinding
+
 WHITE_KEY_WIDTH_CM = 2.28 # Adjust to your keyboard
-RIGHT_WALL_MIDI_PITCH = 77 # The absolute right-most key on your board
+RIGHT_WALL_MIDI_PITCH = pathFinding.RH_MAX_PITCH # The absolute right-most key on your board
 
 # The physical offsets (Positive = Right, Negative = Left)
 BLACK_KEY_OFFSETS_CM = {
@@ -24,7 +26,7 @@ def calculate_standard_pos(pitch):
 robot_map = {}
 wall_standard_cm = calculate_standard_pos(RIGHT_WALL_MIDI_PITCH)
 
-for pitch in range(24, 78): 
+for pitch in range(36, RIGHT_WALL_MIDI_PITCH+1): 
     standard_cm = calculate_standard_pos(pitch)
     # Convert to mirrored robot coordinate (Right Wall = 0.0)
     robot_cm = wall_standard_cm - standard_cm 
