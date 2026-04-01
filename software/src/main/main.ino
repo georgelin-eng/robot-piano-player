@@ -34,9 +34,9 @@
 #define K0 0.6// 0.6 works good
 
 // Small movement PID values
-#define PID_S_KP (0.0567 * K0 ) * 0.25// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
-#define PID_S_KI (0.00067091 * K0 ) * 500//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
-#define PID_S_KD (0.0011 * K0 )*0.01*0.18 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
+#define PID_S_KP (0.0567 * K0 ) * 0.04// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
+#define PID_S_KI (0.00067091 * K0 ) * 1.45//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
+#define PID_S_KD (0.0011 * K0 )*0.01*0.25 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
 
 // large movement PID values
 #define PID_L_KP (0.0567 * K0) * 0.123 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
@@ -57,8 +57,8 @@
 #define PID_LIM_MIN -1.0
 #define PID_LIM_MAX 1.0
 
-#define PID_STICTION_MIDDLE 0.059 * 1.03
-#define PID_STICTION_SIDES 0.04
+#define PID_STICTION_MIDDLE  0.11 //0.059 * 1.03
+#define PID_STICTION_SIDES 0.11 //0.04
 
 // PID integral separation
 #define PID_ERR_THRS_3 (40/1000.0 * KTJ)
@@ -646,7 +646,7 @@ void set_right_PWM(int pwm_dc) {
 
 }
 
-double set_PID_(double measured_rad, prev_measured_rad) {
+double set_PID_(double measured_rad, double prev_measured_rad) {
     double stiction_coeff;
 
     // our LUT is ordered therefore search can be O(logN) instead of an if else chain which is O(N)
@@ -659,7 +659,7 @@ double set_PID_(double measured_rad, prev_measured_rad) {
         for (int i = 0; i < LUT_SIZE; i++) {
             // assumes ordering is small to large
             if (measured_rad < lut[i].measured_rad) {
-                return = lut[i].stiction_pwm;
+                return lut[i].stiction_pwm;
             }
 
         }
@@ -671,7 +671,6 @@ double set_PID_(double measured_rad, prev_measured_rad) {
 }
 
 
-                        else set_PWM(-(pid_output - stiction_coeff));                                                           */
 void set_note_state (int ith_finger, bool state){ 
     // return;
 

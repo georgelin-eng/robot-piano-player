@@ -1,10 +1,10 @@
 #include <stdio.h>             // Standard IO
 #include "RP2040_PWM.h"        // PWM
-#include "../main/pins.h"              // pin to variable mappings
-#include "../main/commands.h"          // command table
-#include "../main/peripherals.h"       // ISRs for interacting with peripherals
-#include "../main/PID.h"               // PID functions
-#include "../main/logging.h"           // logging functions
+#include "pins.h"              // pin to variable mappings
+//#include "../commands.h"          // command table
+#include "peripherals.h"       // ISRs for interacting with peripherals
+#include "PID.h"               // PID functions
+#include "logging.h"           // logging functions
 #include <Adafruit_MCP23X17.h> // I2C expander library
 
 #include <LCD1602.h>           // LCD library
@@ -264,29 +264,29 @@ void loop() {
 
             break;
         case(HOME):
-            measured_rad = pulseCount * RAD_PER_PULSE;
-            PIDController_Measure(&PID, measured_rad);
+            // measured_rad = pulseCount * RAD_PER_PULSE;
+            // PIDController_Measure(&PID, measured_rad);
 
-            speed_cmps = PID.d_measured * KJT * 100.0;
+            // speed_cmps = PID.d_measured * KJT * 100.0;
 
-            // ramp up speed slowly. Just use if statement based control instead of tuning a PID control loop on speed
-            if (real_abs(speed_cmps) < TARGET_HOME_SPEED) {
-                pwm_dc = pwm_dc + 1;
+            // // ramp up speed slowly. Just use if statement based control instead of tuning a PID control loop on speed
+            // if (real_abs(speed_cmps) < TARGET_HOME_SPEED) {
+            //     pwm_dc = pwm_dc + 1;
 
-                if (pwm_dc >= 20) {
-                    pwm_dc = 20;
-                }
-            } else if (real_abs(speed_cmps) > TARGET_HOME_SPEED) {
-                pwm_dc = pwm_dc - 1;
+            //     if (pwm_dc >= 30) {
+            //         pwm_dc = 30;
+            //     }
+            // } else if (real_abs(speed_cmps) > TARGET_HOME_SPEED) {
+            //     pwm_dc = pwm_dc - 1;
 
-                if (pwm_dc < 0) {
-                    pwm_dc = 0;
-                }
-            }
+            //     if (pwm_dc < 0) {
+            //         pwm_dc = 0;
+            //     }
+            // }
 
-             set_right_PWM(pwm_dc);
+            set_right_PWM(15);
 
-            delay(10);
+            // delay(10);
 
             // Use PID controller to get speed measurements (derivative of position)
             
@@ -297,7 +297,7 @@ void loop() {
             // LCD_Log(LCD_BUFFER, 2);
             
             if (digitalRead(PROX_SENSE1) == 0) {
-                state = RUN_INIT;
+                state = RUN;
                 pulseCount = 0; // Once we are finished homing set this position as 0
                  PIDController_Init(&PID);
             }
@@ -330,15 +330,15 @@ void loop() {
                         test_pwm += 0.25;
 
                         if (test_pwm > 100) test_pwm = 100; 
-
+                        
+                        delay(5);
                         set_left_PWM(test_pwm); 
                         last_increment_time = millis();
                     }
 
 
-                    if (real_abs(measured_rad - start_test_rad) > 0.05) { // corresponds to 0.05mm, too small - gl
+                    if (real_abs(measured_rad - start_test_rad) > 0.2) { 
                         
-
                         set_left_PWM(0); 
                         
                         sprintf(MSG_BUFFER, "Pos: %0.2f rad, Stic PWM: %0.2lf", measured_rad, test_pwm);
@@ -350,9 +350,13 @@ void loop() {
                     break;
 
                 case 2: 
-                    if (millis() - last_increment_time > 250) { 
-                        sub_state = 0; // Restart the cycle at the new position
-                    }
+
+                    set_left_PWM(20);
+                    delay(10);
+                    set_left_PWM(0);
+                    delay(100);
+                    sub_state = 0; 
+
                     break;
             }
             break;
@@ -362,9 +366,9 @@ void loop() {
             set_left_PWM(0);
             set_right_PWM(0);
 
-            for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
-                set_note_state(i, LOW);
-            }
+            //for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
+             //   set_note_state(i, LOW);
+            //}
 
             break;
         default:

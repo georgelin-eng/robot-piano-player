@@ -26,7 +26,7 @@ def calculate_standard_pos(pitch):
 robot_map = {}
 wall_standard_cm = calculate_standard_pos(RIGHT_WALL_MIDI_PITCH)
 
-for pitch in range(36, RIGHT_WALL_MIDI_PITCH+1): 
+for pitch in range(24, RIGHT_WALL_MIDI_PITCH+1): 
     standard_cm = calculate_standard_pos(pitch)
     # Convert to mirrored robot coordinate (Right Wall = 0.0)
     robot_cm = wall_standard_cm - standard_cm 
