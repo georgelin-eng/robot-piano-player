@@ -35,13 +35,16 @@ class RobotPianoGUI:
         self.tab_main = ttk.Frame(self.notebook)
         self.tab_plot = ttk.Frame(self.notebook)
         self.tab_code = ttk.Frame(self.notebook)
+        self.tab_left_hand = ttk.Frame(self.notebook)
         
         self.notebook.add(self.tab_main, text=" Controls & Console ")
         self.notebook.add(self.tab_plot, text=" Kinematics Plot ")
         self.notebook.add(self.tab_code, text=" C-Code Schedule ")
+        self.notebook.add(self.tab_left_hand, text=" Left Hand Keys ")
         
         self.setup_main_tab()
         self.setup_code_tab()
+        self.setup_left_hand_tab()
         
         self.current_canvas = None # Holds the matplotlib widget
         self.header_canvas = None # Holds the header matplotlib widget
@@ -55,37 +58,38 @@ class RobotPianoGUI:
         tk.Entry(frame_file, textvariable=self.filepath_var, width=80, state='readonly').pack(side="left", padx=5)
         tk.Button(frame_file, text="Browse...", command=self.browse_file).pack(side="left")
 
-        # --- 2. SOLENOID TOGGLES ---
+        # --- 2. SOLENOID TOGGLES (PIANO KEYS) ---
         frame_config = tk.LabelFrame(self.tab_main, text="2. Right Hand Solenoid Loadout (Max 5)", padx=10, pady=10)
         frame_config.pack(fill="x", padx=10, pady=5)
         
         # Hardcoded floating-point safe offsets
         self.ALL_FINGERS = [
             {'id': 0, 'offset': 6.84, 'type': 'w', 'name': 'Pos 0 (White)'},
-            {'id': 1, 'offset': 5.26, 'type': 'b', 'name': 'Pos 1 (Black)'},
+            {'id': 1, 'offset': 5.70, 'type': 'b', 'name': 'Pos 1 (Black)'},
             {'id': 2, 'offset': 4.56, 'type': 'w', 'name': 'Pos 2 (White)'},
-            {'id': 3, 'offset': 2.98, 'type': 'b', 'name': 'Pos 3 (Black)'},
+            {'id': 3, 'offset': 3.42, 'type': 'b', 'name': 'Pos 3 (Black)'},
             {'id': 4, 'offset': 2.28, 'type': 'w', 'name': 'Pos 4 (White)'},
-            {'id': 5, 'offset': 0.70, 'type': 'b', 'name': 'Pos 5 (Black)'},
+            {'id': 5, 'offset': 1.14, 'type': 'b', 'name': 'Pos 5 (Black)'},
             {'id': 6, 'offset': 0.00, 'type': 'w', 'name': 'Pos 6 (White)'}
         ]
-        
-        self.finger_vars = {}
-        # Layout checkboxes in a grid
-        for i, f in enumerate(self.ALL_FINGERS):
-            var = tk.IntVar()
-            # Default to turning on 0, 1, 3, 4, 6
-            if f['id'] in [0, 1, 3, 4, 6]: 
-                var.set(1)
                 
-            cb = tk.Checkbutton(
-                frame_config, 
-                text=f"{f['name']}  [Offset: {f['offset']}cm]", 
-                variable=var, 
-                command=lambda fid=f['id']: self.enforce_limit(fid)
-            )
-            cb.grid(row=i//3, column=i%3, sticky="w", padx=10, pady=5)
+        self.finger_vars = {}
+        self.key_rects = {}  # Store canvas rectangle IDs for visual updates
+        
+        # Initialize finger states
+        for f in self.ALL_FINGERS:
+            var = tk.IntVar()
+
+            if f['id'] in [0, 1, 2, 3, 4]: 
+                var.set(1)
             self.finger_vars[f['id']] = var
+        
+        # Create piano keyboard canvas
+        self.piano_canvas = tk.Canvas(frame_config, width=600, height=140, bg="#2a2a2a", highlightthickness=0)
+        self.piano_canvas.pack(fill="x", padx=5, pady=5)
+        self.piano_canvas.bind("<Button-1>", self.on_piano_key_click)
+        
+        self.draw_piano_keys()
 
         # --- 3. GENERATION & CONSOLE ---
         btn_generate = tk.Button(self.tab_main, text="GENERATE C-CODE SCHEDULE", font=("Arial", 12, "bold"), 
@@ -138,12 +142,22 @@ class RobotPianoGUI:
         self.plot_canvas.pack(side="left", fill="both", expand=True)
         scrollbar_plot_y.pack(side="right", fill="y")
 
-    def enforce_limit(self, changed_id):
-        """Prevents the user from equipping more than 5 solenoids."""
-        active_count = sum(var.get() for var in self.finger_vars.values())
-        if active_count > 5:
-            messagebox.showwarning("Hardware Limit", "Your carriage can only hold a maximum of 5 solenoids!")
-            self.finger_vars[changed_id].set(0) # Uncheck the one they just clicked
+    def setup_left_hand_tab(self):
+        """Set up the left hand piano keys visualization tab."""
+        # Create a frame for the left hand piano
+        frame_left_hand = tk.LabelFrame(self.tab_left_hand, text="Left Hand Keys Required", padx=10, pady=10)
+        frame_left_hand.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        # Create piano keyboard canvas for left hand
+        self.left_hand_canvas = tk.Canvas(frame_left_hand, width=600, height=140, bg="#2a2a2a", highlightthickness=0)
+        self.left_hand_canvas.pack(fill="x", padx=5, pady=5)
+        
+        # Add instruction text
+        tk.Label(frame_left_hand, text="Left hand keys will be analyzed automatically when you generate C-code in the main tab.",
+                font=("Arial", 9), fg="#666666").pack(pady=(0, 10))
+        
+        # Initialize left hand key states
+        self.left_hand_keys = {}  # Will store which keys are used
 
     def on_closing(self):
         """Handle window close event - cleanup matplotlib figures and exit."""
@@ -157,6 +171,281 @@ class RobotPianoGUI:
         
         # Destroy the window and quit
         self.root.destroy()
+
+    def draw_piano_keys(self):
+        """Draw interactive piano keys on the canvas."""
+        self.piano_canvas.delete("all")
+        self.key_rects = {}
+        
+        # Canvas dimensions
+        canvas_width = 600
+        canvas_height = 140
+        
+        # Sizing
+        white_key_width = 45
+        white_key_height = 120
+        black_key_width = 28
+        black_key_height = 75
+        margin_left = 20
+        
+        # First pass: Draw all white keys
+        x_pos = margin_left
+        white_key_positions = {}  # Store x_pos for each white key
+        for finger in (self.ALL_FINGERS):
+            fid = finger['id']
+            key_type = finger['type']
+            
+            if key_type == 'w':
+                is_active = self.finger_vars[fid].get() == 1
+                
+                # White key
+                x1 = x_pos
+                y1 = 10
+                x2 = x_pos + white_key_width
+                y2 = y1 + white_key_height
+                
+                fill_color = "#A1A5F6" if is_active else "#F5F5F5"
+                outline_color = "#110F58" if is_active else "#333333"
+                
+                rect_id = self.piano_canvas.create_rectangle(
+                    x1, y1, x2, y2,
+                    fill=fill_color,
+                    outline=outline_color,
+                    width=2,
+                    tags=f"key_{fid}"
+                )
+                
+                self.key_rects[fid] = rect_id
+                white_key_positions[fid] = (x_pos, x2)
+                
+                # Move to next position for white keys (they touch)
+                x_pos = x2 + 2
+        
+        # Second pass: Draw all black keys (on top)
+        for finger in (self.ALL_FINGERS):
+            fid = finger['id']
+            key_type = finger['type']
+            
+            if key_type == 'b':
+                is_active = self.finger_vars[fid].get() == 1
+                
+                # Black key - positioned between white keys, overlapping
+                # Find the x position based on the next white key position
+                next_white_id = None
+                for other_finger in self.ALL_FINGERS:
+                    if other_finger['type'] == 'w' and other_finger['id'] > fid:
+                        next_white_id = other_finger['id']
+                        break
+                
+                if next_white_id and next_white_id in white_key_positions:
+                    x1_white, x2_white = white_key_positions[next_white_id]
+                    x_center = x1_white - 1
+                else:
+                    x_center = x_pos  # Fallback
+                
+                x1 = x_center - black_key_width // 2
+                y1 = 10
+                x2 = x_center + black_key_width // 2
+                y2 = y1 + black_key_height
+                
+                fill_color = "#1B1B68" if is_active else "#1a1a1a"
+                outline_color = "#080C45" if is_active else "#333333"
+                
+                rect_id = self.piano_canvas.create_rectangle(
+                    x1, y1, x2, y2,
+                    fill=fill_color,
+                    outline=outline_color,
+                    width=2,
+                    tags=f"key_{fid}"
+                )
+                
+                self.key_rects[fid] = rect_id
+        
+        # Add instruction text at the bottom
+        self.piano_canvas.create_text(
+            canvas_width // 2,
+            canvas_height - 10,
+            text="Click keys to toggle solenoids",
+            fill="#999999",
+            font=("Arial", 9)
+        )
+
+    def on_piano_key_click(self, event):
+        """Handle piano key clicks. Check black keys first for priority."""
+        # First, check black keys (they're on top and should have priority)
+        found_key = None
+        for finger in self.ALL_FINGERS:
+            if finger['type'] == 'b':
+                fid = finger['id']
+                if fid in self.key_rects:
+                    coords = self.piano_canvas.coords(self.key_rects[fid])
+                    if coords:
+                        x1, y1, x2, y2 = coords
+                        if x1 <= event.x <= x2 and y1 <= event.y <= y2:
+                            found_key = fid
+                            break
+        
+        # If no black key was clicked, check white keys
+        if found_key is None:
+            for finger in self.ALL_FINGERS:
+                if finger['type'] == 'w':
+                    fid = finger['id']
+                    if fid in self.key_rects:
+                        coords = self.piano_canvas.coords(self.key_rects[fid])
+                        if coords:
+                            x1, y1, x2, y2 = coords
+                            if x1 <= event.x <= x2 and y1 <= event.y <= y2:
+                                found_key = fid
+                                break
+        
+        if found_key is not None:
+            self.toggle_solenoid(found_key)
+            #print(f"Keys selected: {[f['name'] for f in self.ALL_FINGERS if self.finger_vars[f['id']].get() == 1]   }")
+
+    def toggle_solenoid(self, fid):
+        """Toggle a solenoid on/off and enforce the limit."""
+        current_state = self.finger_vars[fid].get()
+        
+        # Check if turning on would exceed the limit
+        if current_state == 0:
+            active_count = sum(var.get() for var in self.finger_vars.values())
+            if active_count >= 5:
+                messagebox.showwarning("Hardware Limit", "Your carriage can only hold a maximum of 5 solenoids!")
+                return
+        
+        # Toggle the state
+        self.finger_vars[fid].set(1 - current_state)
+        
+        # Redraw the piano to show the new state
+        self.draw_piano_keys()
+
+    def draw_left_hand_piano(self):
+        """Draw the left hand piano keys showing which ones are used."""
+        self.left_hand_canvas.delete("all")
+        
+        # Canvas dimensions
+        canvas_width = 600
+        canvas_height = 140
+        
+        # Define the left hand key layout (C2 to B2)
+        LEFT_HAND_KEYS = [
+            {'id': 0, 'pitch': 48, 'name': 'C2', 'type': 'w'},
+            {'id': 1, 'pitch': 49, 'name': 'C#2', 'type': 'b'},
+            {'id': 2, 'pitch': 50, 'name': 'D2', 'type': 'w'},
+            {'id': 3, 'pitch': 51, 'name': 'D#2', 'type': 'b'},
+            {'id': 4, 'pitch': 52, 'name': 'E2', 'type': 'w'},
+            {'id': 5, 'pitch': 53, 'name': 'F2', 'type': 'w'},
+            {'id': 6, 'pitch': 54, 'name': 'F#2', 'type': 'b'},
+            {'id': 7, 'pitch': 55, 'name': 'G2', 'type': 'w'},
+            {'id': 8, 'pitch': 56, 'name': 'G#2', 'type': 'b'},
+            {'id': 9, 'pitch': 57, 'name': 'A2', 'type': 'w'},
+            {'id': 10, 'pitch': 58, 'name': 'A#2', 'type': 'b'},
+            {'id': 11, 'pitch': 59, 'name': 'B2', 'type': 'w'},
+            {'id': 12, 'pitch': 60, 'name': 'C3', 'type': 'w'},
+            {'id': 13, 'pitch': 61, 'name': 'C#3', 'type': 'b'},
+            {'id': 14, 'pitch': 62, 'name': 'D3', 'type': 'w'},
+            {'id': 15, 'pitch': 63, 'name': 'D#3', 'type': 'b'},
+            {'id': 16, 'pitch': 64, 'name': 'E3', 'type': 'w'}
+        ]
+        
+        # Sizing
+        white_key_width = 40
+        white_key_height = 120
+        black_key_width = 24
+        black_key_height = 75
+        margin_left = 20
+        
+        # First pass: Draw all white keys
+        x_pos = margin_left
+        white_key_positions = {}
+        for key in LEFT_HAND_KEYS:
+            if key['type'] == 'w':
+                is_used = key['id'] in self.left_hand_keys
+                
+                # White key
+                x1 = x_pos
+                y1 = 10
+                x2 = x_pos + white_key_width
+                y2 = y1 + white_key_height
+                
+                fill_color = "#A1A5F6" if is_used else "#F5F5F5"
+                outline_color = "#110F58" if is_used else "#333333"
+
+                
+                self.left_hand_canvas.create_rectangle(
+                    x1, y1, x2, y2,
+                    fill=fill_color,
+                    outline=outline_color,
+                    width=2
+                )
+                
+                # Add key label
+                self.left_hand_canvas.create_text(
+                    (x1 + x2) // 2, y1 + white_key_height * 3 // 4,
+                    text=key['name'],
+                    fill="#000000" if is_used else "#666666",
+                    font=("Arial", 8, "bold")
+                )
+                
+                white_key_positions[key['id']] = (x_pos, x2)
+                
+                # Move to next position
+                x_pos = x2 + 2
+        
+        # Second pass: Draw all black keys (on top)
+        for key in LEFT_HAND_KEYS:
+            if key['type'] == 'b':
+                is_used = key['id'] in self.left_hand_keys
+                
+                # Find position between white keys
+                prev_white_id = None
+                next_white_id = None
+                for other_key in LEFT_HAND_KEYS:
+                    if other_key['type'] == 'w':
+                        if other_key['id'] < key['id']:
+                            prev_white_id = other_key['id']
+                        elif other_key['id'] > key['id'] and next_white_id is None:
+                            next_white_id = other_key['id']
+                
+                if next_white_id and next_white_id in white_key_positions:
+                    x1_white, x2_white = white_key_positions[next_white_id]
+                    x_center = x1_white - 1
+                else:
+                    continue
+                
+                x1 = x_center - black_key_width // 2
+                y1 = 10
+                x2 = x_center + black_key_width // 2
+                y2 = y1 + black_key_height
+                
+
+                fill_color = "#1B1B68" if is_used else "#1a1a1a"
+                outline_color = "#080C45" if is_used else "#333333"
+                
+                self.left_hand_canvas.create_rectangle(
+                    x1, y1, x2, y2,
+                    fill=fill_color,
+                    outline=outline_color,
+                    width=2
+                )
+                
+                # Add key label for black keys
+                if is_used:
+                    self.left_hand_canvas.create_text(
+                        (x1 + x2) // 2, y1 + black_key_height // 2,
+                        text=key['name'],
+                        fill="#FFFFFF",
+                        font=("Arial", 7, "bold")
+                    )
+        
+        # Add instruction text at the bottom
+        # self.left_hand_canvas.create_text(
+        #     canvas_width // 2,
+        #     canvas_height - 10,
+        #     text="Left hand keys required for this song (highlighted = used)",
+        #     fill="#999999",
+        #     font=("Arial", 9)
+        # )
 
     def browse_file(self):
         filepath = filedialog.askopenfilename(filetypes=[("MIDI Files", "*.mid *.midi")])
@@ -213,8 +502,47 @@ class RobotPianoGUI:
             self.current_canvas.draw()
             self.current_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
             
+            # --- ANALYZE LEFT HAND KEYS ---
+            print("\n--- ANALYZING LEFT HAND KEYS ---")
+            try:
+                import midi_utils
+                import pathFinding
+                
+                # Extract song name from file path
+                song_name = os.path.splitext(os.path.basename(midi_path))[0]
+                notes = midi_utils.midi_to_notes(song_name)
+                
+                # Separate left and right hand notes
+                left_hand_notes = [n for n in notes if n.pitch <= pathFinding.LH_MAX_PITCH]
+                left_pitches = [note.pitch for note in left_hand_notes]
+                
+                print(f"All pitches: {[n.pitch for n in notes]}")
+
+                # Count frequency of each pitch
+                pitch_counts = {}
+                for pitch in left_pitches:
+                    pitch_counts[pitch] = pitch_counts.get(pitch, 0) + 1
+
+                print(f"Left hand pitch counts: {pitch_counts}")    
+                
+                # Determine which keys are used based on the LEFT_FINGERS mapping
+                self.left_hand_keys = {}
+                for pitch, count in pitch_counts.items():
+                    if pitch - 12 in pathFinding.LEFT_FINGERS:
+                        finger_id = pathFinding.LEFT_FINGERS[pitch - 12]
+                        self.left_hand_keys[finger_id] = count
+                
+
+                # Draw the left hand piano
+                self.draw_left_hand_piano()
+                
+                print(f"✅ Left hand analysis complete! Found {len(self.left_hand_keys)} unique keys used.")
+                
+            except Exception as e:
+                print(f"❌ Error analyzing left hand keys: {e}")
+            
             print("\n--- COMPILATION COMPLETE ---")
-            print("Check the 'Kinematics Plot' and 'C-Code Schedule' tabs!")
+            print("Check the 'Kinematics Plot', 'C-Code Schedule', and 'Left Hand Keys' tabs!")
             
             # Automatically switch to the plot tab so the user sees the result!
             #self.notebook.select(self.tab_plot)

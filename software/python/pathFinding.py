@@ -1,3 +1,4 @@
+from matplotlib import ticker
 import pretty_midi
 import midi_utils
 import collections
@@ -36,9 +37,9 @@ ROBOT_FINGERS = [
     {'id': 1, 'offset': 2*WHITE_KEY_SOLENOID_SEPERATION_CM + BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION, 'type': 'b'}, 
     {'id': 2, 'offset': 2*WHITE_KEY_SOLENOID_SEPERATION_CM, 'type': 'w'},   
     {'id': 3, 'offset': 1*WHITE_KEY_SOLENOID_SEPERATION_CM + BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION, 'type': 'b'},  
-    {'id': 4, 'offset': 1*WHITE_KEY_SOLENOID_SEPERATION_CM, 'type': 'w'},
+    {'id': 4, 'offset': 1*WHITE_KEY_SOLENOID_SEPERATION_CM, 'type': 'w'}
 #    {'id': 5, 'offset': BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION, 'type': 'b'}
-     {'id': 6, 'offset': 0*WHITE_KEY_WIDTH_CM, 'type': 'w'}
+#    {'id': 6, 'offset': 0*WHITE_KEY_WIDTH_CM, 'type': 'w'}
 ]
 
 LEFT_FINGERS = {
@@ -650,6 +651,8 @@ def plot_piano(print_plot):
     
     # 1. Setup Axes (Dynamically size based on the song length)
     ax.set_ylim(TIME_OFFSET + 1.0, -0.8)
+    ax.set_xlim(90, 10)
+
     ax.set_xlabel("", fontsize=12)
     ax.set_ylabel("", fontsize=12)
     ax.set_yticks([])
@@ -716,8 +719,11 @@ def plot_robot_movement(all_notes, rh_times, rh_path_cm, right_config, print_plo
     
     # 1. Setup Axes (Dynamically size based on the song length)
     ax.set_ylim(max_t + 1.0, -0.8)
-    ax.set_xlabel("Physical Position relative to C3 (cm)", fontsize=12)
+    ax.set_xlim(90, 10)
+    ax.set_xlabel("Physical Position (cm)", fontsize=12)
     ax.set_ylabel("Time (seconds)", fontsize=12)
+    ax.yaxis.set_major_locator(ticker.MultipleLocator(5))
+    ax.yaxis.set_minor_locator(ticker.MultipleLocator(5))
 
 
     # 2. Draw Piano Header (From C2 to F6)
@@ -738,7 +744,7 @@ def plot_robot_movement(all_notes, rh_times, rh_path_cm, right_config, print_plo
             ax.add_patch(patches.Rectangle((pos - VISUAL_BLACK_KEY_WIDTH/2, header_y), VISUAL_BLACK_KEY_WIDTH, 0, 
                                            ec='white', fc='#333333', zorder=0))
 
-
+    last_time = 0
     # 3. Draw the Song Notes (The Background "Synthesia" falling blocks)
     for n in all_notes:
         pos = get_note_position_cm(n.pitch - 12)
@@ -755,6 +761,8 @@ def plot_robot_movement(all_notes, rh_times, rh_path_cm, right_config, print_plo
 
         ax.add_patch(patches.Rectangle((pos - w/2, n.start), w, max(0.05, n.end - n.start), 
                                        ec='#999', fc=color, alpha=0.5, zorder=0))
+        last_time = n.end       
+
 
     # 4. Draw Right Hand Motor Trajectory (The solid black line)
     if rh_times and rh_path_cm:
@@ -787,7 +795,7 @@ def plot_robot_movement(all_notes, rh_times, rh_path_cm, right_config, print_plo
 
         # Final Hold
         last_t, last_p = rh_times[-1] , rh_path_cm[-1] + 7 * WHITE_KEY_WIDTH_CM
-        ax.plot([last_p, last_p], [last_t, last_t + 0.5], color='black', lw=4, solid_capstyle='round')
+        ax.plot([last_p, last_p], [last_t, last_time], color='black', lw=4, solid_capstyle='round')
 
     # 5. Draw Dynamic Deadzones and Hand Zones
     
@@ -833,8 +841,8 @@ def compile_cnc_schedule(midi_filepath, right_hand_config):
     #all_notes = midi_utils.fit_song_into_keyboard(all_notes)
     
     # Save the trimmed preview file
-    midi_utils.notes_to_midi(all_notes, filename=f"songs/{song_name}_preview.mid")
-    print(f"Saved trimmed preview to songs/{song_name}_preview.mid")
+    #midi_utils.notes_to_midi(all_notes, filename=f"songs/{song_name}_preview.mid")
+    #print(f"Saved trimmed preview to songs/{song_name}_preview.mid")
     
     # --- 4. STRICT PRE-FILTERING ---
     left_hand_notes = [n for n in all_notes if n.pitch <= LH_MAX_PITCH]
