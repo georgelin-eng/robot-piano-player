@@ -2,11 +2,11 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import os
 import sys
-
-# Matplotlib integration for Tkinter
+import midi_utils
+import pathFinding
+from pathFinding import compile_cnc_schedule, plot_piano 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-from pathFinding import compile_cnc_schedule, plot_piano 
 
 class RedirectConsole:
     def __init__(self, text_widget):
@@ -54,9 +54,28 @@ class RobotPianoGUI:
         frame_file = tk.LabelFrame(self.tab_main, text="1. Select Song (MIDI)", padx=10, pady=10)
         frame_file.pack(fill="x", padx=10, pady=5)
         
-        self.filepath_var = tk.StringVar()
-        tk.Entry(frame_file, textvariable=self.filepath_var, width=80, state='readonly').pack(side="left", padx=5)
-        tk.Button(frame_file, text="Browse...", command=self.browse_file).pack(side="left")
+        # Folder selection
+        self.folder_var = tk.StringVar()
+        folder_frame = tk.Frame(frame_file)
+        folder_frame.pack(fill="x", pady=(0, 5))
+        tk.Label(folder_frame, text="Folder:   ").pack(side="left")
+        tk.Entry(folder_frame, textvariable=self.folder_var, width=60, state='readonly').pack(side="left", padx=(5, 0))
+        tk.Button(folder_frame, text="Browse Folder...", command=self.browse_folder).pack(side="left", padx=(5, 0))
+        
+        # MIDI file selection
+        midi_frame = tk.Frame(frame_file)
+        midi_frame.pack(fill="x")
+        tk.Label(midi_frame, text="MIDI File:").pack(side="left")
+        self.file_var = tk.StringVar()
+        self.midi_listbox = tk.Listbox(midi_frame, height=6, width=60, selectmode=tk.SINGLE)
+        self.midi_listbox.pack(side="left", padx=(5, 0))
+        self.midi_listbox.bind('<<ListboxSelect>>', self.on_midi_select)
+        
+        # Scrollbar for listbox
+        scrollbar = tk.Scrollbar(midi_frame)
+        scrollbar.pack(side="right", fill="y")
+        self.midi_listbox.config(yscrollcommand=scrollbar.set)
+        scrollbar.config(command=self.midi_listbox.yview)
 
         # --- 2. SOLENOID TOGGLES (PIANO KEYS) ---
         frame_config = tk.LabelFrame(self.tab_main, text="2. Right Hand Solenoid Loadout (Max 5)", padx=10, pady=10)
@@ -64,13 +83,13 @@ class RobotPianoGUI:
         
         # Hardcoded floating-point safe offsets
         self.ALL_FINGERS = [
-            {'id': 0, 'offset': 6.84, 'type': 'w', 'name': 'Pos 0 (White)'},
-            {'id': 1, 'offset': 5.70, 'type': 'b', 'name': 'Pos 1 (Black)'},
-            {'id': 2, 'offset': 4.56, 'type': 'w', 'name': 'Pos 2 (White)'},
-            {'id': 3, 'offset': 3.42, 'type': 'b', 'name': 'Pos 3 (Black)'},
-            {'id': 4, 'offset': 2.28, 'type': 'w', 'name': 'Pos 4 (White)'},
-            {'id': 5, 'offset': 1.14, 'type': 'b', 'name': 'Pos 5 (Black)'},
-            {'id': 6, 'offset': 0.00, 'type': 'w', 'name': 'Pos 6 (White)'}
+            {'id': 0, 'offset': 6.84, 'type': 'w', 'name': 'Pos 0 (White)', 'start_pitch': 65},
+            {'id': 1, 'offset': 5.70, 'type': 'b', 'name': 'Pos 1 (Black)', 'start_pitch': 66},
+            {'id': 2, 'offset': 4.56, 'type': 'w', 'name': 'Pos 2 (White)', 'start_pitch': 67},
+            {'id': 3, 'offset': 3.42, 'type': 'b', 'name': 'Pos 3 (Black)', 'start_pitch': 68},
+            {'id': 4, 'offset': 2.28, 'type': 'w', 'name': 'Pos 4 (White)', 'start_pitch': 69},
+            {'id': 5, 'offset': 1.14, 'type': 'b', 'name': 'Pos 5 (Black)', 'start_pitch': 70},
+            {'id': 6, 'offset': 0.00, 'type': 'w', 'name': 'Pos 6 (White)', 'start_pitch': 71}
         ]
                 
         self.finger_vars = {}
@@ -312,7 +331,7 @@ class RobotPianoGUI:
             if active_count >= 5:
                 messagebox.showwarning("Hardware Limit", "Your carriage can only hold a maximum of 5 solenoids!")
                 return
-        
+
         # Toggle the state
         self.finger_vars[fid].set(1 - current_state)
         
@@ -447,13 +466,41 @@ class RobotPianoGUI:
         #     font=("Arial", 9)
         # )
 
+    def browse_folder(self):
+        folder_path = filedialog.askdirectory()
+        if folder_path:
+            self.folder_var.set(folder_path)
+            self.load_midi_files(folder_path)
+
+    def load_midi_files(self, folder_path):
+        """Load all MIDI files from the selected folder."""
+        import os
+        self.midi_listbox.delete(0, tk.END)
+        self.midi_files = []
+        
+        try:
+            for file in os.listdir(folder_path):
+                if file.lower().endswith(('.mid', '.midi')):
+                    self.midi_listbox.insert(tk.END, file)
+                    self.midi_files.append(os.path.join(folder_path, file))
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load MIDI files: {e}")
+
+    def on_midi_select(self, event):
+        """Handle MIDI file selection from listbox."""
+        selection = self.midi_listbox.curselection()
+        if selection:
+            index = selection[0]
+            if index < len(self.midi_files):
+                self.file_var.set(self.midi_files[index])
+
     def browse_file(self):
         filepath = filedialog.askopenfilename(filetypes=[("MIDI Files", "*.mid *.midi")])
         if filepath:
             self.filepath_var.set(filepath)
 
     def run_compiler(self):
-        midi_path = self.filepath_var.get()
+        midi_path = self.file_var.get() if hasattr(self, 'file_var') and self.file_var.get() else self.filepath_var.get()
         if not midi_path:
             messagebox.showerror("Error", "Please select a MIDI file first!")
             return
@@ -495,43 +542,72 @@ class RobotPianoGUI:
             # Embed the matplotlib figure directly in the header frame
             self.header_canvas = FigureCanvasTkAgg(header_fig, master=self.plot_header_frame)
             self.header_canvas.draw()
-            self.header_canvas.get_tk_widget().pack(fill="x", padx=(53, 15), pady=0, expand=True)
+            self.header_canvas.get_tk_widget().pack(fill="x", padx=(50, 20), pady=0, expand=True)
 
             # Inject the plot into the scrollable frame
             self.current_canvas = FigureCanvasTkAgg(fig, master=self.plot_scrollable_frame)
             self.current_canvas.draw()
             self.current_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+            # --- RIGHT HAND ACCESSIBILITY CHECK ---
+            print("\n--- ANALYZING RIGHT HAND KEYS ---")
+
+            # Extract song name from file path
+            song_name = os.path.splitext(os.path.basename(midi_path))[0]
+            notes = midi_utils.midi_to_notes(song_name)
+            
+            right_hand_notes = [n for n in notes if pathFinding.RH_MIN_PITCH <= n.pitch <= pathFinding.RH_MAX_PITCH]
+            right_hand_required = set(n.pitch for n in right_hand_notes)
+
+            # print(f"Right-hand notes required: {right_hand_required}")
+
+            # Determine active fingers from the GUI solenoid configuration
+            active_fingers = [f for f in self.ALL_FINGERS if self.finger_vars[f['id']].get() == 1]
+
+            # print(f"Start pitches of active fingers: {[f['start_pitch'] for f in active_fingers]}")
+
+            inaccessible_notes = []
+            for pitch in sorted(right_hand_required):
+                note_is_black = pathFinding.is_black_key(pitch)
+                note_has_access = False
+                for finger in active_fingers:
+                    if note_is_black and finger['type'] == 'b' and finger['start_pitch'] <= pitch:
+                        note_has_access = True
+                        break
+                    elif not note_is_black and finger['type'] == 'w' and finger['start_pitch'] <= pitch:
+                        note_has_access = True
+                        break
+
+                if not note_has_access:
+                    # convert pitch to note name (simple map within an octave)
+                    note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+                    name = f"{note_names[pitch % 12]}{pitch // 12 - 1}"
+                    inaccessible_notes.append(name)
+
+            if inaccessible_notes:
+                print(f"⚠️  Right-hand notes required by song but not reachable with selected solenoids: {', '.join(inaccessible_notes)}")
+            else:
+                print("✅ All required right-hand notes are reachable with current solenoid loadout.")
+
             
             # --- ANALYZE LEFT HAND KEYS ---
             print("\n--- ANALYZING LEFT HAND KEYS ---")
             try:
-                import midi_utils
-                import pathFinding
-                
-                # Extract song name from file path
-                song_name = os.path.splitext(os.path.basename(midi_path))[0]
-                notes = midi_utils.midi_to_notes(song_name)
-                
                 # Separate left and right hand notes
                 left_hand_notes = [n for n in notes if n.pitch <= pathFinding.LH_MAX_PITCH]
                 left_pitches = [note.pitch for note in left_hand_notes]
                 
-                print(f"All pitches: {[n.pitch for n in notes]}")
-
                 # Count frequency of each pitch
                 pitch_counts = {}
                 for pitch in left_pitches:
                     pitch_counts[pitch] = pitch_counts.get(pitch, 0) + 1
 
-                print(f"Left hand pitch counts: {pitch_counts}")    
-                
                 # Determine which keys are used based on the LEFT_FINGERS mapping
                 self.left_hand_keys = {}
                 for pitch, count in pitch_counts.items():
                     if pitch - 12 in pathFinding.LEFT_FINGERS:
                         finger_id = pathFinding.LEFT_FINGERS[pitch - 12]
                         self.left_hand_keys[finger_id] = count
-                
 
                 # Draw the left hand piano
                 self.draw_left_hand_piano()

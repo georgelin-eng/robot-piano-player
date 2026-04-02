@@ -650,14 +650,14 @@ def plot_piano(print_plot):
     ax.invert_xaxis()
     
     # 1. Setup Axes (Dynamically size based on the song length)
-    ax.set_ylim(TIME_OFFSET + 1.0, -0.8)
+    ax.set_ylim(TIME_OFFSET, -0.4)
     ax.set_xlim(90, 10)
 
     ax.set_xlabel("", fontsize=12)
     ax.set_ylabel("", fontsize=12)
     ax.set_yticks([])
     ax.set_xticks([])
-    ax.set_title("Robot Performance: Left Hand (Static) & Right Hand (Mobile)", fontsize=16, pad=20)
+    #ax.set_title("Robot Performance: Left Hand (Static) & Right Hand (Mobile)", fontsize=16, pad=20)
 
     # 2. Draw Piano Header (From C2 to F6)
     header_y = 0
@@ -685,13 +685,13 @@ def plot_piano(print_plot):
     ax.axvspan(lh_right_edge, rh_left_edge, color='red', alpha=0.1, hatch='//', zorder=0)
     
     mid_deadzone_center = (rh_left_edge + lh_right_edge) / 2
-    ax.text(mid_deadzone_center, -1, "DEADZONE (SPLIT)", color='red', alpha=0.6, fontsize=12, weight='bold', ha='center')
+    ax.text(mid_deadzone_center, -.5, "DEADZONE (SPLIT)", color='red', alpha=0.6, fontsize=12, weight='bold', ha='center')
 
 
     # --- Dynamic Text Labels for Active Zones ---
     # Pushed 10cm deep into their respective zones so they don't overlap the red boxes
-    ax.text(lh_right_edge + 10.0, -1, "LEFT HAND ZONE", color='blue', alpha=0.5, fontsize=14, weight='bold', ha='center')
-    ax.text(rh_left_edge - 10.0, -1, "RIGHT HAND ZONE", color='black', alpha=0.5, fontsize=14, weight='bold', ha='center')
+    ax.text(lh_right_edge + 10.0, -.5, "LEFT HAND ZONE", color='blue', alpha=0.5, fontsize=14, weight='bold', ha='center')
+    ax.text(rh_left_edge - 10.0, -.5, "RIGHT HAND ZONE", color='black', alpha=0.5, fontsize=14, weight='bold', ha='center')
     
 
     ax.grid(True, axis='y', alpha=0.3)
