@@ -34,9 +34,9 @@
 #define K0 0.6// 0.6 works good
 
 // Small movement PID values
-#define PID_S_KP (0.0567 * K0 ) * 0.04// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
+#define PID_S_KP (0.0567 * K0 ) * 0.0315// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
 #define PID_S_KI (0.00067091 * K0 ) * 1.45//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
-#define PID_S_KD (0.0011 * K0 )*0.01*0.25 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
+#define PID_S_KD (0.0011 * K0 )*0.01*0.25*0.8//0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
 
 // large movement PID values
 #define PID_L_KP (0.0567 * K0) * 0.123 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
@@ -338,14 +338,14 @@ void loop() {
 
             command_idx = 0;    
 
-            sprintf(LCD_BUFFER, "RUN_INIT");
-            LCD_Log(LCD_BUFFER, 1);
+            //sprintf(LCD_BUFFER, "RUN_INIT");
+            //LCD_Log(LCD_BUFFER, 1);
 
-            sprintf(LCD_BUFFER, "start=%0.1lf", song_start_time);
-            LCD_Log(LCD_BUFFER, 2);
+            //sprintf(LCD_BUFFER, "start=%0.1lf", song_start_time);
+            //LCD_Log(LCD_BUFFER, 2);
 
 
-            wanted_rad = INITIAL_MOTOR_POSITION_MM * KTJ/1000.0;
+            wanted_rad =  INITIAL_MOTOR_POSITION_MM * KTJ/1000.0;
             PIDController_GainSchedule(&PID, &K_large, &K_small, INITIAL_MOTOR_POSITION_MM);
             if(millis() - prev_pid_time  >= PID_CONTROL_INTERVAL*1e3){
                 prev_pid_time = millis();
@@ -361,7 +361,7 @@ void loop() {
                     state = RUN;    
                 }
 
-                sprintf(LCD_BUFFER, "yd=%0.1f,ya=%0.1f", wanted_rad*KJT*1000, measured_rad*KJT*1000);
+                sprintf(LCD_BUFFER, "ya=%0.1f,yd=%0.1f", measured_rad*KJT*1000, wanted_rad*KJT*1000);
                 LCD_Log(LCD_BUFFER, 1);
             }
 
@@ -536,7 +536,7 @@ void loop() {
                         pid_error_settle_first_time_entry = 1;
                         pid_within_error_time = millis();
                         
-                        sprintf(LCD_BUFFER, "yd=%0.1f,ya=%0.1f", wanted_rad*KJT*1000, measured_rad*KJT*1000);
+                        sprintf(LCD_BUFFER, "ya=%0.1f,yd=%0.1f", measured_rad*KJT*1000,  wanted_rad*KJT*1000);
                         LCD_Log(LCD_BUFFER, 1);
     
                         if (abs(PID_move_size_mm) < PID_MIN_MOVE) {
