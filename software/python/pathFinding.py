@@ -645,12 +645,12 @@ def plot_piano(print_plot):
     """
     
     
-    fig, ax = plt.subplots(figsize=(16, 5))
+    fig, ax = plt.subplots(figsize=(16, 4.5))
     ax.invert_yaxis()
     ax.invert_xaxis()
     
     # 1. Setup Axes (Dynamically size based on the song length)
-    ax.set_ylim(TIME_OFFSET, -0.4)
+    ax.set_ylim(PIANO_HEADER_HEIGHT + 0.1, -0.1)
     ax.set_xlim(90, 10)
 
     ax.set_xlabel("", fontsize=12)
@@ -685,17 +685,17 @@ def plot_piano(print_plot):
     ax.axvspan(lh_right_edge, rh_left_edge, color='red', alpha=0.1, hatch='//', zorder=0)
     
     mid_deadzone_center = (rh_left_edge + lh_right_edge) / 2
-    ax.text(mid_deadzone_center, -.5, "DEADZONE (SPLIT)", color='red', alpha=0.6, fontsize=12, weight='bold', ha='center')
+    ax.text(mid_deadzone_center, -.2, "DEADZONE (SPLIT)", color='red', alpha=0.6, fontsize=12, weight='bold', ha='center')
 
 
     # --- Dynamic Text Labels for Active Zones ---
     # Pushed 10cm deep into their respective zones so they don't overlap the red boxes
-    ax.text(lh_right_edge + 10.0, -.5, "LEFT HAND ZONE", color='blue', alpha=0.5, fontsize=14, weight='bold', ha='center')
-    ax.text(rh_left_edge - 10.0, -.5, "RIGHT HAND ZONE", color='black', alpha=0.5, fontsize=14, weight='bold', ha='center')
+    ax.text(lh_right_edge + 10.0, -.2, "LEFT HAND ZONE", color='blue', alpha=0.5, fontsize=14, weight='bold', ha='center')
+    ax.text(rh_left_edge - 10.0, -.2, "RIGHT HAND ZONE", color='black', alpha=0.5, fontsize=14, weight='bold', ha='center')
     
 
     ax.grid(True, axis='y', alpha=0.3)
-    ax.legend(loc='lower left', fontsize=12, framealpha=0.9)
+    #ax.legend(loc='lower left', fontsize=12, framealpha=0.9)
     plt.tight_layout()
     
     if(print_plot == 1):
@@ -818,13 +818,14 @@ def plot_robot_movement(all_notes, rh_times, rh_path_cm, right_config, print_plo
 
 import os
 
-def compile_cnc_schedule(midi_filepath, right_hand_config):
+def compile_cnc_schedule(midi_filepath, right_hand_config, show_error = 1):
     # --- 1. SYNC THE MATH ---
     # Force Pathfinder to obey the GUI finger config
     global ROBOT_FINGERS
     ROBOT_FINGERS = right_hand_config
 
-    print(f"GUI selected file: {midi_filepath}")
+    if show_error:
+        print(f"GUI selected file: {midi_filepath}")
     
     # --- 2. OS PATH FILTERING & TELEPORTATION ---
     base_name = os.path.basename(midi_filepath)
@@ -833,7 +834,8 @@ def compile_cnc_schedule(midi_filepath, right_hand_config):
     # Teleport Python's working directory so midi_utils can find the config/ folder
     target_dir = os.path.dirname(os.path.dirname(midi_filepath))
     os.chdir(target_dir)
-    print(f"Re-aligned working directory to: {target_dir}")
+    if show_error:
+        print(f"Re-aligned working directory to: {target_dir}")
     
     # --- 3. EXTRACT & PREVIEW ---
     # Extract ALL notes using your untouched utility
@@ -848,16 +850,20 @@ def compile_cnc_schedule(midi_filepath, right_hand_config):
     left_hand_notes = [n for n in all_notes if n.pitch <= LH_MAX_PITCH]
     right_hand_notes = [n for n in all_notes if RH_MIN_PITCH <= n.pitch <= RH_MAX_PITCH]
     
-    print(f"Found {len(left_hand_notes)} bass notes and {len(right_hand_notes)} melody notes.")
+    if show_error:
+        print(f"Found {len(left_hand_notes)} bass notes and {len(right_hand_notes)} melody notes.")
     
     # --- 5. PATHFINDING & COMPILATION ---
-    print("Running pathfinding algorithm on Right Hand...")
+    if show_error:
+        print("Running pathfinding algorithm on Right Hand...")
     rh_times, rh_path_cm = find_best_time_path(right_hand_notes)
     
     if not rh_times:
-        print("WARNING: No valid path found! The chord might be physically impossible to span.")
+        if print:
+            print("WARNING: No valid path found! The chord might be physically impossible to span.")
     else:
-        print("Path found. Generating C code...")
+        if show_error:
+            print("Path found. Generating C code...")
         c_code = generate_c_command_array(
             left_notes=left_hand_notes, 
             right_notes=right_hand_notes, 
@@ -879,6 +885,7 @@ def compile_cnc_schedule(midi_filepath, right_hand_config):
         with open(out_path, "w") as f:
             f.write(c_code)
             
-        print(f"✅ Successfully saved C array to '{out_path}'!")
+        if show_error:
+            print(f"✅ Successfully saved C array to '{out_path}'!")
         
         return c_code, fig

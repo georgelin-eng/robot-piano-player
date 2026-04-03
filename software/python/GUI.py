@@ -22,7 +22,8 @@ class RobotPianoGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Robot Piano CNC Post-Processor")
-        self.root.geometry("1000x800")
+        # Start in maximized/full screen mode
+        self.root.state('zoomed')
         self.original_stdout = sys.stdout
         
         # Set up window close handler
@@ -46,6 +47,9 @@ class RobotPianoGUI:
         self.setup_code_tab()
         self.setup_left_hand_tab()
         
+        # Auto-select the songs folder on startup
+        self.auto_select_songs_folder()
+        
         self.current_canvas = None # Holds the matplotlib widget
         self.header_canvas = None # Holds the header matplotlib widget
 
@@ -58,7 +62,7 @@ class RobotPianoGUI:
         self.folder_var = tk.StringVar()
         folder_frame = tk.Frame(frame_file)
         folder_frame.pack(fill="x", pady=(0, 5))
-        tk.Label(folder_frame, text="Folder:   ").pack(side="left")
+        tk.Label(folder_frame, text="Folder:    ").pack(side="left")
         tk.Entry(folder_frame, textvariable=self.folder_var, width=60, state='readonly').pack(side="left", padx=(5, 0))
         tk.Button(folder_frame, text="Browse Folder...", command=self.browse_folder).pack(side="left", padx=(5, 0))
         
@@ -77,10 +81,48 @@ class RobotPianoGUI:
         self.midi_listbox.config(yscrollcommand=scrollbar.set)
         scrollbar.config(command=self.midi_listbox.yview)
 
-        # --- 2. SOLENOID TOGGLES (PIANO KEYS) ---
-        frame_config = tk.LabelFrame(self.tab_main, text="2. Right Hand Solenoid Loadout (Max 5)", padx=10, pady=10)
-        frame_config.pack(fill="x", padx=10, pady=5)
+        # --- 2. SOLENOID CONFIGURATION ---
+        self.config_frame = tk.Frame(self.tab_main)
+        self.config_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+        # Fixed width for optimize panel
+        self.optimize_panel_width = 500
+        self.minimum_panel_height = 250
+
+        # Maximum solenoids setting
+        self.max_solenoids = tk.IntVar(value=5)
+
+        # Left side: Manual solenoid loadout
+        frame_config = tk.LabelFrame(self.config_frame, text=f"2a. Right Hand Solenoid Loadout (Max {self.max_solenoids.get()})", padx=10, pady=10)
+        frame_config.pack(side="left", fill="both", expand=True, padx=(0, 5), pady=(0,0))
+        frame_config.config(width=600, height=self.minimum_panel_height)
+        frame_config.pack_propagate(False)
+
+        # Max solenoids control
+        max_frame = tk.Frame(frame_config)
+        max_frame.pack(fill="x", pady=(0, 10))
+        tk.Label(max_frame, text="Max Solenoids:").pack(side="left")
+        spinbox = tk.Spinbox(max_frame, from_=1, to=7, textvariable=self.max_solenoids, width=3, command=self.update_max_solenoids)
+        spinbox.pack(side="left", padx=(5, 0))
+        self.max_solenoids.trace_add("write", lambda *args: self.update_max_solenoids())
         
+        # Initialize the UI with current max value
+        self.update_max_solenoids()
+
+        # Right side: Optimization section
+        frame_optimize = tk.LabelFrame(self.config_frame, text="2b. Optimize Solenoid Configuration", padx=10, pady=10)
+        frame_optimize.pack(side="right", fill="y", padx=(5, 0), pady=(0,0))
+        frame_optimize.config(width=self.optimize_panel_width, height=self.minimum_panel_height)
+        frame_optimize.pack_propagate(False)
+
+        # Keep panel widths and heights stable when the window resizes
+        def on_config_frame_resize(event):
+            target_left_width = max(event.width - self.optimize_panel_width - 10, 300)
+            frame_config.config(width=target_left_width, height=max(event.height - 20, self.minimum_panel_height))
+            frame_optimize.config(width=self.optimize_panel_width, height=max(event.height - 20, self.minimum_panel_height))
+
+        self.config_frame.bind("<Configure>", on_config_frame_resize)
+
         # Hardcoded floating-point safe offsets
         self.ALL_FINGERS = [
             {'id': 0, 'offset': 6.84, 'type': 'w', 'name': 'Pos 0 (White)', 'start_pitch': 65},
@@ -110,6 +152,21 @@ class RobotPianoGUI:
         
         self.draw_piano_keys()
 
+        # Optimization button
+        self.btn_optimize = tk.Button(frame_optimize, text=f"FIND OPTIMAL\n{self.max_solenoids.get()}-SOLENOID\nCONFIGURATION", 
+                                font=("Arial", 10, "bold"), bg="#4CAF50", fg="white", 
+                                command=self.optimize_solenoid_config, height=3)
+        self.btn_optimize.pack(fill="x", pady=(0, 10))
+        
+        # Results display
+        self.optimize_result_label = tk.Label(frame_optimize, text="Click button to find\noptimal configuration", 
+                                            font=("Arial", 9), justify="center")
+        self.optimize_result_label.pack(fill="x")
+        
+        # Progress indicator
+        self.optimize_progress = tk.Label(frame_optimize, text="", font=("Arial", 8), fg="#666666")
+        self.optimize_progress.pack(fill="x", pady=(10, 0))
+
         # --- 3. GENERATION & CONSOLE ---
         btn_generate = tk.Button(self.tab_main, text="GENERATE C-CODE SCHEDULE", font=("Arial", 12, "bold"), 
                                  bg="#4CAF50", fg="white", command=self.run_compiler)
@@ -133,7 +190,7 @@ class RobotPianoGUI:
 
         # --- PLOT TAB LAYOUT ---
         # Create a header frame for the frozen piano layout
-        self.plot_header_frame = tk.Frame(self.tab_plot, bg="white", height=200)
+        self.plot_header_frame = tk.Frame(self.tab_plot, bg="white", height=250)
         self.plot_header_frame.pack(fill="x", padx=0, pady=0)
         self.plot_header_frame.pack_propagate(False)  # Fixed height
 
@@ -177,6 +234,124 @@ class RobotPianoGUI:
         
         # Initialize left hand key states
         self.left_hand_keys = {}  # Will store which keys are used
+
+    def auto_select_songs_folder(self):
+        """Automatically select the songs folder if it exists."""
+        import os
+        
+        # Get the directory where the script is located
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        songs_folder = os.path.join(script_dir, "songs")
+        
+        # Check if songs folder exists
+        if os.path.exists(songs_folder) and os.path.isdir(songs_folder):
+            self.folder_var.set(songs_folder)
+            self.load_midi_files(songs_folder)
+            print(f"Auto-selected songs folder: {songs_folder}")
+
+    def optimize_solenoid_config(self):
+        """Find the optimal 5-solenoid configuration for the current MIDI file."""
+        import itertools
+
+        midi_path = self.file_var.get() if hasattr(self, 'file_var') and self.file_var.get() else ''
+        if not midi_path:
+            messagebox.showerror("Error", "Please select a MIDI file first!")
+            print("❌ No MIDI file selected for optimization")
+            return
+        
+        # Reset progress
+        self.optimize_progress.config(text="Analyzing combinations...")
+        self.optimize_result_label.config(text="Testing configurations...\nPlease wait...")
+        self.root.update()
+        
+        try:            
+            # Get all possible combinations of max_solenoids fingers from 7
+            all_finger_ids = [f['id'] for f in self.ALL_FINGERS]
+            max_solenoids = self.max_solenoids.get()
+            combinations = list(itertools.combinations(all_finger_ids, max_solenoids))
+            
+            print(f"\n--- OPTIMIZING SOLENOID CONFIGURATION ---")
+            print(f"Testing {len(combinations)} combinations of {max_solenoids} solenoids from {len(all_finger_ids)} available...")
+            
+            best_config = None
+            best_score = float('inf')  # Lower is better (shorter code)
+            best_c_code = ""
+            
+            # Test each combination
+            for i, combo in enumerate(combinations):
+                self.optimize_progress.config(text=f"Testing combination {i+1}/{len(combinations)}...")
+                self.root.update()
+                
+                # Create configuration for this combination
+                active_config = []
+                active_fingers = []
+                for finger_id in combo:
+                    finger = next(f for f in self.ALL_FINGERS if f['id'] == finger_id)
+                    active_config.append({
+                        'id': finger['id'], 
+                        'offset': finger['offset'], 
+                        'type': finger['type']
+                    })
+                    active_fingers.append(finger)
+
+                # Validate with right-hand reachability before executing heavy compile
+                unreachable_notes = self.check_right_hand_accessibility(midi_path, active_fingers)
+                if unreachable_notes:
+                    print(f"Configuration {combo} skipped, missing reach for: {', '.join(unreachable_notes)}")
+                    continue
+
+                try:
+                    # Run pathfinding for this configuration
+                    # Save current working directory since compile_cnc_schedule changes it
+                    original_cwd = os.getcwd()
+                    c_code, _ = compile_cnc_schedule(midi_path, active_config, 0)
+                    os.chdir(original_cwd)  # Restore working directory
+                    
+                    # Score based on code length (shorter = more efficient)
+                    score = len(c_code)
+                    
+                    if score < best_score:
+                        best_score = score
+                        best_config = combo
+                        
+                except Exception as e:
+                    # Skip configurations that fail
+                    print(f"Configuration {combo} failed: {e}")
+                    continue
+            
+            if best_config:
+                # Update the UI to show the optimal configuration
+                self.apply_optimal_config(best_config)
+                
+                # Display results
+                config_names = [next(f['name'] for f in self.ALL_FINGERS if f['id'] == fid) for fid in best_config]
+                result_text = f"Optimal Configuration:\n{', '.join(config_names)}\n\nCode length: {best_score} chars"
+                self.optimize_result_label.config(text=result_text)
+                
+                print(f"✅ Optimization complete!")
+                print(f"Best configuration: {best_config}")
+                print(f"Configuration names: {config_names}")
+                print(f"Code length: {best_score} characters")
+                
+            else:
+                self.optimize_result_label.config(text="No valid configurations found")
+                print("❌ No valid configurations found")
+            
+            self.optimize_progress.config(text="")
+            
+        except Exception as e:
+            self.optimize_result_label.config(text="Optimization failed")
+            self.optimize_progress.config(text="")
+            print(f"❌ Optimization failed: {e}")
+
+    def apply_optimal_config(self, optimal_combo):
+        """Apply the optimal solenoid configuration to the UI."""
+        # Update finger variables
+        for f in self.ALL_FINGERS:
+            self.finger_vars[f['id']].set(f['id'] in optimal_combo)
+        
+        # Redraw the piano keys
+        self.draw_piano_keys()
 
     def on_closing(self):
         """Handle window close event - cleanup matplotlib figures and exit."""
@@ -289,6 +464,40 @@ class RobotPianoGUI:
             font=("Arial", 9)
         )
 
+    def update_max_solenoids(self):
+        """Update the frame title and enforce current solenoid count."""
+        max_count = self.max_solenoids.get()
+        frame_config = None
+        for child in self.config_frame.winfo_children():
+            if isinstance(child, tk.LabelFrame) and "Right Hand Solenoid Loadout" in child.cget("text"):
+                frame_config = child
+                break
+        
+        if frame_config:
+            frame_config.config(text=f"2a. Right Hand Solenoid Loadout (Max {max_count})")
+        
+        # Update optimization button text
+        if hasattr(self, 'btn_optimize'):
+            self.btn_optimize.config(text=f"FIND OPTIMAL\n{max_count}-SOLENOID\nCONFIGURATION")
+        
+        # Enforce the limit by deactivating excess solenoids
+        if hasattr(self, 'finger_vars'):
+            active_count = sum(var.get() for var in self.finger_vars.values())
+            if active_count > max_count:
+                # Deactivate solenoids starting from the highest ID
+                excess = active_count - max_count
+                deactivated = 0
+                for fid in range(6, -1, -1):  # Start from highest ID
+                    if self.finger_vars[fid].get() == 1 and deactivated < excess:
+                        self.finger_vars[fid].set(0)
+                        deactivated += 1
+                        if deactivated >= excess:
+                            break
+                
+                if hasattr(self, 'draw_piano_keys'):
+                    self.draw_piano_keys()
+                print(f"⚠️ Deactivated {deactivated} solenoid(s) to respect new maximum of {max_count}")
+
     def on_piano_key_click(self, event):
         """Handle piano key clicks. Check black keys first for priority."""
         # First, check black keys (they're on top and should have priority)
@@ -328,8 +537,10 @@ class RobotPianoGUI:
         # Check if turning on would exceed the limit
         if current_state == 0:
             active_count = sum(var.get() for var in self.finger_vars.values())
-            if active_count >= 5:
-                messagebox.showwarning("Hardware Limit", "Your carriage can only hold a maximum of 5 solenoids!")
+            max_allowed = self.max_solenoids.get()
+            if active_count >= max_allowed:
+                messagebox.showwarning("Hardware Limit", f"Your carriage can only hold a maximum of {max_allowed} solenoids!")
+                print(f"⚠️ Cannot activate more than {max_allowed} solenoids at once!")
                 return
 
         # Toggle the state
@@ -493,6 +704,43 @@ class RobotPianoGUI:
             index = selection[0]
             if index < len(self.midi_files):
                 self.file_var.set(self.midi_files[index])
+                print(f"Selected MIDI file: {self.midi_files[index]}")
+
+    def check_right_hand_accessibility(self, midi_path, active_fingers):
+        """Return right-hand inaccesssible notes for active solenoid fingers."""
+        # Set working directory like compile_cnc_schedule does
+        target_dir = os.path.dirname(os.path.dirname(midi_path))
+        original_cwd = os.getcwd()
+        os.chdir(target_dir)
+        
+        try:
+            song_name = os.path.splitext(os.path.basename(midi_path))[0]
+            notes = midi_utils.midi_to_notes(song_name)
+
+            right_hand_notes = [n for n in notes if pathFinding.RH_MIN_PITCH <= n.pitch <= pathFinding.RH_MAX_PITCH]
+            right_hand_required = set(n.pitch for n in right_hand_notes)
+
+            inaccessible_notes = []
+            for pitch in sorted(right_hand_required):
+                note_is_black = pathFinding.is_black_key(pitch)
+                note_has_access = False
+                for finger in active_fingers:
+                    if note_is_black and finger['type'] == 'b' and finger['start_pitch'] <= pitch:
+                        note_has_access = True
+                        break
+                    elif not note_is_black and finger['type'] == 'w' and finger['start_pitch'] <= pitch:
+                        note_has_access = True
+                        break
+
+                if not note_has_access:
+                    note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+                    name = f"{note_names[pitch % 12]}{pitch // 12 - 1}"
+                    inaccessible_notes.append(name)
+
+            return inaccessible_notes
+        finally:
+            # Always restore original working directory
+            os.chdir(original_cwd)
 
     def browse_file(self):
         filepath = filedialog.askopenfilename(filetypes=[("MIDI Files", "*.mid *.midi")])
@@ -500,9 +748,10 @@ class RobotPianoGUI:
             self.filepath_var.set(filepath)
 
     def run_compiler(self):
-        midi_path = self.file_var.get() if hasattr(self, 'file_var') and self.file_var.get() else self.filepath_var.get()
+        midi_path = self.file_var.get() if hasattr(self, 'file_var') and self.file_var.get() else ''
         if not midi_path:
             messagebox.showerror("Error", "Please select a MIDI file first!")
+            print("❌ No MIDI file selected for compilation")
             return
             
         # Build the configuration list based on what is checked
@@ -512,12 +761,11 @@ class RobotPianoGUI:
                 # Strip out the 'name' key so it matches your backend perfectly
                 active_config.append({'id': f['id'], 'offset': f['offset'], 'type': f['type']})
             
-        self.text_console.delete("1.0", tk.END)
-        print("--- INITIATING COMPILATION PIPELINE ---")
+        print("\n--- INITIATING COMPILATION PIPELINE ---")
         
         try:
             # Call the backend wrapper (which now returns the code and the figure)
-            c_code, fig = compile_cnc_schedule(midi_path, active_config)
+            c_code, fig = compile_cnc_schedule(midi_path, active_config, 1)
             
             # --- UPDATE CODE TAB ---
             self.text_code.delete("1.0", tk.END)
@@ -542,47 +790,19 @@ class RobotPianoGUI:
             # Embed the matplotlib figure directly in the header frame
             self.header_canvas = FigureCanvasTkAgg(header_fig, master=self.plot_header_frame)
             self.header_canvas.draw()
-            self.header_canvas.get_tk_widget().pack(fill="x", padx=(50, 20), pady=0, expand=True)
+            self.header_canvas.get_tk_widget().pack(fill=tk.X, padx=(50, 20), pady=0, expand=False)
 
             # Inject the plot into the scrollable frame
             self.current_canvas = FigureCanvasTkAgg(fig, master=self.plot_scrollable_frame)
             self.current_canvas.draw()
-            self.current_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+            self.current_canvas.get_tk_widget().pack(fill=tk.X, expand=True)
 
             # --- RIGHT HAND ACCESSIBILITY CHECK ---
             print("\n--- ANALYZING RIGHT HAND KEYS ---")
 
-            # Extract song name from file path
-            song_name = os.path.splitext(os.path.basename(midi_path))[0]
-            notes = midi_utils.midi_to_notes(song_name)
-            
-            right_hand_notes = [n for n in notes if pathFinding.RH_MIN_PITCH <= n.pitch <= pathFinding.RH_MAX_PITCH]
-            right_hand_required = set(n.pitch for n in right_hand_notes)
-
-            # print(f"Right-hand notes required: {right_hand_required}")
-
             # Determine active fingers from the GUI solenoid configuration
             active_fingers = [f for f in self.ALL_FINGERS if self.finger_vars[f['id']].get() == 1]
-
-            # print(f"Start pitches of active fingers: {[f['start_pitch'] for f in active_fingers]}")
-
-            inaccessible_notes = []
-            for pitch in sorted(right_hand_required):
-                note_is_black = pathFinding.is_black_key(pitch)
-                note_has_access = False
-                for finger in active_fingers:
-                    if note_is_black and finger['type'] == 'b' and finger['start_pitch'] <= pitch:
-                        note_has_access = True
-                        break
-                    elif not note_is_black and finger['type'] == 'w' and finger['start_pitch'] <= pitch:
-                        note_has_access = True
-                        break
-
-                if not note_has_access:
-                    # convert pitch to note name (simple map within an octave)
-                    note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-                    name = f"{note_names[pitch % 12]}{pitch // 12 - 1}"
-                    inaccessible_notes.append(name)
+            inaccessible_notes = self.check_right_hand_accessibility(midi_path, active_fingers)
 
             if inaccessible_notes:
                 print(f"⚠️  Right-hand notes required by song but not reachable with selected solenoids: {', '.join(inaccessible_notes)}")
@@ -593,6 +813,9 @@ class RobotPianoGUI:
             # --- ANALYZE LEFT HAND KEYS ---
             print("\n--- ANALYZING LEFT HAND KEYS ---")
             try:
+                song_name = os.path.splitext(os.path.basename(midi_path))[0]
+                notes = midi_utils.midi_to_notes(song_name)
+
                 # Separate left and right hand notes
                 left_hand_notes = [n for n in notes if n.pitch <= pathFinding.LH_MAX_PITCH]
                 left_pitches = [note.pitch for note in left_hand_notes]
@@ -618,13 +841,11 @@ class RobotPianoGUI:
                 print(f"❌ Error analyzing left hand keys: {e}")
             
             print("\n--- COMPILATION COMPLETE ---")
-            print("Check the 'Kinematics Plot', 'C-Code Schedule', and 'Left Hand Keys' tabs!")
+            print("Check the 'Kinematics Plot', 'C-Code Schedule', and 'Left Hand Keys' tabs!\n")
             
-            # Automatically switch to the plot tab so the user sees the result!
-            #self.notebook.select(self.tab_plot)
             
         except Exception as e:
-            print(f"\n[!] COMPILER CRASHED: {e}")
+            print(f"\n[!] COMPILER CRASHED: {e}\n")
 
 if __name__ == "__main__":
     root = tk.Tk()

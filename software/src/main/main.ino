@@ -1,10 +1,10 @@
 #include <stdio.h>             // Standard IO
 #include "RP2040_PWM.h"        // PWM
 #include "pins.h"              // pin to variable mappings
-#include "commands.h"          // command table
+// #include "commands.h"          // command table
 #include "stiction_map.h"          // command table
 //#include "cust_commands.h"        // command table
-// #include "led_commands.h" 
+#include "led_commands.h" 
 #include "peripherals.h"       // ISRs for interacting with peripherals
 #include "PID.h"               // PID functions
 #include "logging.h"           // logging functions
@@ -560,17 +560,17 @@ void loop() {
                 sprintf(LCD_BUFFER, "%0d: R_P %0d", command_idx, mask);
                 LCD_Log(LCD_BUFFER, 1);
 
-                // sprintf(LCD_BUFFER, "t=%0.1lf, e=%0.1lf", song_elapsed_time, action_end_time);
-                // LCD_Log(LCD_BUFFER, 2);
-                
-                for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
-                    if (mask & (1 << i)){
-                        set_note_state(i, HIGH);
-                    }
-                    else{
-                        set_note_state(i, LOW);
-                    }
-                }
+                // for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
+                //     if (mask & (1 << i)){
+                //         set_note_state(i, HIGH);
+                //     }
+                //     else{
+                //         set_note_state(i, LOW);
+                //     }
+                // }
+
+                mcp_main.digitalWrite(0, HIGH);
+
                 //3 CHECK TIME
                 if (song_elapsed_time >= action_end_time){
                     for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
@@ -684,6 +684,7 @@ void set_note_state (int ith_finger, bool state){
         doesn't get reset when parsing the other, we use an if statement
         to separate this logic so the default doesn't get hit. 
     */
+
     if (ith_finger <= 11) {
         switch (ith_finger)
         {
@@ -724,8 +725,8 @@ void set_note_state (int ith_finger, bool state){
                 mcp_main.digitalWrite(SOLENOID_L_12, state);
                 break;
             default:
-                mcp_main.digitalWrite(SOLENOID_L_1,  LOW);
-                mcp_main.digitalWrite(SOLENOID_L_2,  LOW);
+                mcp_main.digitalWrite(SOLENOID_L_1,  HIGH);
+                mcp_main.digitalWrite(SOLENOID_L_2,  HIGH);
                 mcp_main.digitalWrite(SOLENOID_L_3,  LOW);
                 mcp_main.digitalWrite(SOLENOID_L_4,  LOW);
                 mcp_main.digitalWrite(SOLENOID_L_5,  LOW);
