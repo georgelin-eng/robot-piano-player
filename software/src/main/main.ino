@@ -34,9 +34,9 @@
 #define K0 0.6// 0.6 works good
 
 // Small movement PID values
-#define PID_S_KP (0.0567 * K0 ) * 0.035// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
-#define PID_S_KI (0.00067091 * K0 ) * 1.45//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
-#define PID_S_KD (0.0011 * K0 )*0.01*0.25*0.5//0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
+#define PID_S_KP (0.0567 * K0 ) * 0.038// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
+#define PID_S_KI (0.00067091 * K0 ) * 1.4//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
+#define PID_S_KD (0.0011 * K0 )*0.01*0.25*0.44//0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
 
 // large movement PID values
 #define PID_L_KP (0.0567 * K0) * 0.123 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
@@ -47,7 +47,7 @@
 #define PID_MAX_MOVE 80 // mm
 
 #define PID_STICTION 0.01 // feedforward control for stiction (WIP)
-
+// []
 #define PID_KAW 0.01 // Anti-integral windup gain (WIP)
 // #define PID_BETA 0.2759 // mdp * 10 @ 80Hz
 // #define PID_BETA 0.4211 // mdp * 5 @ 80Hz
@@ -347,13 +347,6 @@ void loop() {
 
             command_idx = 0;    
 
-            //sprintf(LCD_BUFFER, "RUN_INIT");
-            //LCD_Log(LCD_BUFFER, 1);
-
-            //sprintf(LCD_BUFFER, "start=%0.1lf", song_start_time);
-            //LCD_Log(LCD_BUFFER, 2);
-
-
             wanted_rad =  INITIAL_MOTOR_POSITION_MM * KTJ/1000.0;
             PIDController_GainSchedule(&PID, &K_large, &K_small, INITIAL_MOTOR_POSITION_MM);
             if(millis() - prev_pid_time  >= PID_CONTROL_INTERVAL*1e3){
@@ -479,6 +472,8 @@ void loop() {
                     pid_output = PIDController_Update(&PID, wanted_rad, measured_rad);
                     // PIDController_IntegralUpdate(&PID, &IntCoeff);
 
+
+
                     if (real_abs(PID.error) < ANGLE_ERR_THRS) {
                         if (pid_error_settle_first_time_entry) {
                             pid_within_error_time = millis();
@@ -486,15 +481,9 @@ void loop() {
                         }
 
                         /*
-                            the first time the error is within threshold, we wait
-                            for next instance after PID_ERROR_SETTLE_MS that 
-                            the PID error is within threshold. There is always
-                            the chance for an invalid exit since final settle
-                            cannot be estimated while the PID is running
-
-                            Works for the no OS case
-                            Assumes that if there is OS case that oscilations
-                            are within the error treshold
+                            A debounce is added to make sure we don't exit when we first
+                            hit the setpoint. However, we assume that oscillation period
+                            is smaller than this pid error debounce period. 
                         */
 
                         if (millis() - pid_within_error_time >= PID_ERROR_SETTLE_MS) {
@@ -515,8 +504,8 @@ void loop() {
                     }
                     else if (real_abs(PID.error) >= ANGLE_ERR_THRS) {
                         
-                        if ((measured_rad*KJT*1000 >= 185 || measured_rad*KJT*1000 <= 65) && prev_measured_rad == measured_rad){
-                            stiction_coeff = PID_STICTION_SIDES;
+                        if (measured_rad*KJT*1000 >= 240 && prev_measured_rad == measured_rad){
+                            stiction_coeff = PID_STICTION_SIDES + 0.1;
                         }
                         else if (prev_measured_rad == measured_rad){
                             stiction_coeff = PID_STICTION_MIDDLE;
@@ -526,6 +515,7 @@ void loop() {
 
                         if (PID.error > 0) set_PWM(-(pid_output + stiction_coeff));
                         else set_PWM(-(pid_output - stiction_coeff));
+
                         
                         pid_error_settle_first_time_entry = 1;
                         pid_within_error_time = millis();
@@ -610,26 +600,26 @@ void loop() {
 // ------------------------ F U N C T I O N S    B E G I N ------------------------
 
 void set_PWM(float output) {
-    sprintf(MSG_BUFFER, "output= %0.2f", output);
-    Log("PWM", MSG_BUFFER, LOG_DEBUG);
+    // sprintf(MSG_BUFFER, "output= %0.2f", output);
+    // Log("PWM", MSG_BUFFER, LOG_DEBUG);
 
-    int pwm_dc = (int) (output * 100);
+    // int pwm_dc = (int) (output * 100);
 
-    if (pwm_dc > 0) set_right_PWM(pwm_dc);
-    else            set_left_PWM(abs(pwm_dc));
+    if (output > 0) set_right_PWM(output*100);
+    else            set_left_PWM(real_abs(output*100));
 }
 
-void set_left_PWM(int pwm_dc) {
-    sprintf(MSG_BUFFER, "Left PWM = %d", pwm_dc);
-    Log("LEFT VAL", MSG_BUFFER, LOG_DEBUG);
+void set_left_PWM(float pwm_dc) {
+    // sprintf(MSG_BUFFER, "Left PWM = %d", pwm_dc);
+    // Log("LEFT VAL", MSG_BUFFER, LOG_DEBUG);
     PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100 - pwm_dc);
     PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100);
 
 }
 
-void set_right_PWM(int pwm_dc) {
-    sprintf(MSG_BUFFER, "Right PWM = %d", pwm_dc);
-    Log("RIGHT VAL", MSG_BUFFER, LOG_DEBUG);
+void set_right_PWM(float pwm_dc) {
+    // sprintf(MSG_BUFFER, "Right PWM = %d", pwm_dc);
+    // Log("RIGHT VAL", MSG_BUFFER, LOG_DEBUG);
     PWM1_Instance->setPWM(PWM1_pin, PWM_FREQ, 100);
     PWM2_Instance->setPWM(PWM2_pin, PWM_FREQ, 100 - pwm_dc);
 

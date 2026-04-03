@@ -22,7 +22,7 @@ ORIGIN_MIDI_PITCH = 60
 SPLIT_POINT = 60
 
 LH_MAX_PITCH = 59
-
+ 
 RH_MIN_PITCH = 65    
 RH_MAX_PITCH = 89
 
@@ -37,9 +37,9 @@ ROBOT_FINGERS = [
     {'id': 1, 'offset': 2*WHITE_KEY_SOLENOID_SEPERATION_CM + BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION, 'type': 'b'}, 
     {'id': 2, 'offset': 2*WHITE_KEY_SOLENOID_SEPERATION_CM, 'type': 'w'},   
     {'id': 3, 'offset': 1*WHITE_KEY_SOLENOID_SEPERATION_CM + BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION, 'type': 'b'},  
-    {'id': 4, 'offset': 1*WHITE_KEY_SOLENOID_SEPERATION_CM, 'type': 'w'}
-#    {'id': 5, 'offset': BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION, 'type': 'b'}
-#    {'id': 6, 'offset': 0*WHITE_KEY_WIDTH_CM, 'type': 'w'}
+#    {'id': 4, 'offset': 1*WHITE_KEY_SOLENOID_SEPERATION_CM, 'type': 'w'}
+#   {'id': 5, 'offset': BLACK_KEY_WHITE_KEY_SOLENOID_SEPERATION, 'type': 'b'}
+    {'id': 6, 'offset': 0*WHITE_KEY_WIDTH_CM, 'type': 'w'}
 ]
 
 LEFT_FINGERS = {
