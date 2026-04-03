@@ -43,18 +43,18 @@ ROBOT_FINGERS = [
 ]
 
 LEFT_FINGERS = {
-    36: 0,  # C2
-    37: 1,  # C#2 / Db2
-    38: 2,  # D2
-    39: 3,  # D#2 / Eb2
-    40: 4,  # E2
-    41: 5,  # F2
-    42: 6,  # F#2 / Gb2
-    43: 7,  # G2
-    44: 8,  # G#2 / Ab2
-    45: 9,  # A2
-    46: 10, # A#2 / Bb2
-    47: 11  # B2
+    48: 0,  # C2
+    49: 1,  # C#2 / Db2
+    50: 2,  # D2
+    51: 3,  # D#2 / Eb2
+    52: 4,  # E2
+    53: 5,  # F2
+    54: 6,  # F#2 / Gb2
+    55: 7,  # G2
+    56: 8,  # G#2 / Ab2
+    57: 9,  # A2
+    58: 10, # A#2 / Bb2
+    59: 11  # B2
 }
 
 
@@ -393,106 +393,130 @@ def apply_actuation_limits(commands, min_actuation_time_sec):
             
     return commands
             
+from itertools import groupby
+
 def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm, right_config, left_config):
     
-    initial_setup_mm = round(float(right_path_cm[0] * 10.0),3) if right_path_cm else 0
-    #  BUILD THE MASTER TIMELINE
-    # Combine all notes and extract every unique start time in the whole song
-    all_notes = left_notes + right_notes
-    #master_times = sorted(list(set([n.start for n in all_notes])))
-    master_times = sorted(list(set([round(n.start, 3) for n in all_notes])))
+    # --- 1. INITIAL SETUP ---
+    initial_setup_cm = right_path_cm[0] if right_path_cm else 0.0
+    initial_setup_mm = round(float(initial_setup_cm * 10.0), 3)
     
-    # dictionary to instantly look up where the right hand should be at any given right-hand note time
+    all_notes = left_notes + right_notes
     right_pos_map = {round(t, 3): pos for t, pos in zip(right_times, right_path_cm)}
     
-    commands = []
-    current_pos = -1.0 # Unknown starting position
+    raw_events = []
+    current_pos = initial_setup_cm 
     TIME_OFFSET = 0.5 
     
-    for t in master_times:
+    # --- STEP 1: GENERATE ALL MOTOR MOVES ---
+    master_start_times = sorted(list(set([round(n.start, 3) for n in all_notes])))
+    for t in master_start_times:
         rounded_t = round(t, 3)
-        
-        # RIGHT HAND MOVEMENT 
-        # Did the pathfinding algorithm say the right hand plays a note here?
         if rounded_t in right_pos_map:
             target_pos = right_pos_map[rounded_t]
             
-            # Since current_pos starts at the setup location, this will naturally 
-            # ignore the first note (because it's already there) and only calculate 
-            # commands for the moves that happen mid-song.
             if target_pos != current_pos:
                 dist = abs(target_pos - current_pos)
                 travel_duration = get_travel_time(dist)
                 
                 ideal_departure = (t + TIME_OFFSET) - travel_duration
-                actual_departure = max(0.0, ideal_departure) # Safe to use 0.0 floor again
+                actual_departure = max(0.0, ideal_departure) 
                 
-                commands.append({
-                    'action': 'MOVE',
-                    'solenoid_or_position': round(float(target_pos * 10.0),3), 
-                    'start': actual_departure,
-                    'end': actual_departure + travel_duration
+                raw_events.append({
+                    'time': round(actual_departure, 3),
+                    'type': 'MOVE',
+                    'val': round(float(target_pos * 10.0), 3)
                 })
                 current_pos = target_pos
-                
-        # UNIFIED PLAY COMMAND 
-        # Find every note (left or right) that strikes on this exact millisecond
-        #current_active_notes = [n for n in all_notes if abs(n.start - t) < 0.02]
-        current_active_notes = [n for n in all_notes if round(n.start, 3) == t]
+
+    # --- STEP 2: GENERATE ON/OFF EVENTS FOR EVERY NOTE ---
+    for note in all_notes:
         bitmask = 0
-        max_end_time = t
         
-        for note in current_active_notes:
-            max_end_time = max(max_end_time, note.end)
+        # Determine the bitmask for THIS specific note
+        if note.pitch <= LH_MAX_PITCH:
+            if note.pitch in left_config:
+                bitmask = (1 << left_config[note.pitch])
+        else:
+            note_pos = get_note_position_cm(note.pitch)
+            is_black = is_black_key(note.pitch)
+            rounded_start = round(note.start, 3)
             
-            if note.pitch <= LH_MAX_PITCH:
-                # LEFT HAND LOGIC (Bits 0-11) 
-                if note.pitch in left_config:
-                    finger_id = left_config[note.pitch]
-                    bitmask |= (1 << finger_id)
-            else:
-                #RIGHT HAND LOGIC (Bits 12-19)
-                note_pos = get_note_position_cm(note.pitch)
-                is_black = is_black_key(note.pitch)
-                
+            # Find where the motor is scheduled to be right now
+            if rounded_start in right_pos_map:
+                motor_pos_at_start = right_pos_map[rounded_start]
                 for finger in right_config:
                     if (is_black and finger['type'] == 'w') or (not is_black and finger['type'] == 'b'):
                         continue
                     
-                    # Does this finger line up with the note from our current position?
-                    if abs((current_pos + finger['offset']) - note_pos) <= 0.3:
-                        bitmask |= (1 << (finger['id'] + 12)) # Shift up by 12
+                    if abs((motor_pos_at_start + finger['offset']) - note_pos) <= 0.3:
+                        bitmask = (1 << (finger['id'] + 12)) 
                         break
         
-        # If at least one finger was triggered, append the play command
+        # If a finger was successfully mapped, schedule the ON and OFF events
         if bitmask > 0:
-            commands.append({
-                'action': 'PLAY',
-                'solenoid_or_position': bitmask,
-                'start': t + TIME_OFFSET,
-                'end': max_end_time + TIME_OFFSET
-            })
+            # Enforce minimum actuation time (0.1 seconds) natively here
+            duration = note.end - note.start
+            actual_end_time = note.end if duration >= 0.1 else (note.start + 0.1)
+            
+            raw_events.append({'time': round(note.start + TIME_OFFSET, 3), 'type': 'ON', 'val': bitmask})
+            raw_events.append({'time': round(actual_end_time + TIME_OFFSET, 3), 'type': 'OFF', 'val': bitmask})
 
-    commands.sort(key=lambda x: x['start'])
+    # --- STEP 3: COMPRESS & CHRONOLOGIZE EVENTS ---
+    # Sort everything by exact millisecond
+    raw_events.sort(key=lambda x: x['time'])
     
-    # FILTER FOR MINIMUM ACTUATION TIME
-    commands = apply_actuation_limits(commands, min_actuation_time_sec=0.1)
-    
+    commands = []
+    # Group events that happen at the exact same millisecond together
+    for t, group in groupby(raw_events, key=lambda x: x['time']):
+        move_val = None
+        on_mask = 0
+        off_mask = 0
+        
+        for ev in group:
+            if ev['type'] == 'MOVE': move_val = ev['val']
+            elif ev['type'] == 'ON': on_mask |= ev['val']
+            elif ev['type'] == 'OFF': off_mask |= ev['val']
+            
+        # Order of operations at any given millisecond:
+        # 1. Turn OFF finished notes (Frees up power for the power supply)
+        if off_mask > 0:
+            commands.append({'time': t, 'action': 'SOLENOID_OFF', 'data': off_mask})
+        # 2. Trigger Motor moves
+        if move_val is not None:
+            commands.append({'time': t, 'action': 'MOVE', 'data': move_val})
+        # 3. Turn ON new notes
+        if on_mask > 0:
+            commands.append({'time': t, 'action': 'SOLENOID_ON', 'data': on_mask})
+
+    # --- STEP 4: WRITE THE C CODE ---
     c_code = "#define MOVE 0\n"
-    c_code += "#define PLAY 1\n\n"
+    c_code += "#define SOLENOID_ON 1\n"
+    c_code += "#define SOLENOID_OFF 2\n\n"
     
-    c_code += f"const int INITIAL_MOTOR_POSITION_MM = {initial_setup_mm};\n\n"
+    c_code += f"const float INITIAL_MOTOR_POSITION_MM = {initial_setup_mm}f;\n\n"
+    
+    # The Upgraded Struct
     c_code += "struct command {\n"
+    c_code += "    float time;\n"
     c_code += "    uint8_t action;\n"
-    c_code += "    uint32_t solenoid_or_position;\n"
-    c_code += "    float start_time;\n"
-    c_code += "    float end_time;\n"
+    c_code += "    float position_mm;\n"
+    c_code += "    uint32_t solenoid_mask;\n"
     c_code += "};\n\n"
     
     c_code += "struct command schedule[] = {\n"
     for cmd in commands:
-        c_code += f"    {{{cmd['action']}, {cmd['solenoid_or_position']}, {cmd['start']:.3f}f, {cmd['end']:.3f}f}},\n"
+        if cmd['action'] == 'MOVE':
+            # Motor move: Fill position_mm, leave mask as 0
+            c_code += f"    {{{cmd['time']:.3f}f, MOVE, {cmd['data']:.3f}f, 0}},\n"
+        elif cmd['action'] == 'SOLENOID_ON':
+            # Solenoid ON: Leave position as 0.0f, fill solenoid_mask
+            c_code += f"    {{{cmd['time']:.3f}f, SOLENOID_ON, 0.0f, {cmd['data']}}},\n"
+        elif cmd['action'] == 'SOLENOID_OFF':
+            # Solenoid OFF: Leave position as 0.0f, fill solenoid_mask
+            c_code += f"    {{{cmd['time']:.3f}f, SOLENOID_OFF, 0.0f, {cmd['data']}}},\n"
     c_code += "};\n\n"
+    
     c_code += f"const int SCHEDULE_LENGTH = {len(commands)};\n"
     
     return c_code
@@ -645,19 +669,19 @@ def plot_piano(print_plot):
     """
     
     
-    fig, ax = plt.subplots(figsize=(16, 5))
+    fig, ax = plt.subplots(figsize=(16, 4.5))
     ax.invert_yaxis()
     ax.invert_xaxis()
     
     # 1. Setup Axes (Dynamically size based on the song length)
-    ax.set_ylim(TIME_OFFSET + 1.0, -0.8)
+    ax.set_ylim(PIANO_HEADER_HEIGHT + 0.1, -0.1)
     ax.set_xlim(90, 10)
 
     ax.set_xlabel("", fontsize=12)
     ax.set_ylabel("", fontsize=12)
     ax.set_yticks([])
     ax.set_xticks([])
-    ax.set_title("Robot Performance: Left Hand (Static) & Right Hand (Mobile)", fontsize=16, pad=20)
+    #ax.set_title("Robot Performance: Left Hand (Static) & Right Hand (Mobile)", fontsize=16, pad=20)
 
     # 2. Draw Piano Header (From C2 to F6)
     header_y = 0
@@ -685,17 +709,17 @@ def plot_piano(print_plot):
     ax.axvspan(lh_right_edge, rh_left_edge, color='red', alpha=0.1, hatch='//', zorder=0)
     
     mid_deadzone_center = (rh_left_edge + lh_right_edge) / 2
-    ax.text(mid_deadzone_center, -1, "DEADZONE (SPLIT)", color='red', alpha=0.6, fontsize=12, weight='bold', ha='center')
+    ax.text(mid_deadzone_center, -.2, "DEADZONE (SPLIT)", color='red', alpha=0.6, fontsize=12, weight='bold', ha='center')
 
 
     # --- Dynamic Text Labels for Active Zones ---
     # Pushed 10cm deep into their respective zones so they don't overlap the red boxes
-    ax.text(lh_right_edge + 10.0, -1, "LEFT HAND ZONE", color='blue', alpha=0.5, fontsize=14, weight='bold', ha='center')
-    ax.text(rh_left_edge - 10.0, -1, "RIGHT HAND ZONE", color='black', alpha=0.5, fontsize=14, weight='bold', ha='center')
+    ax.text(lh_right_edge + 10.0, -.2, "LEFT HAND ZONE", color='blue', alpha=0.5, fontsize=14, weight='bold', ha='center')
+    ax.text(rh_left_edge - 10.0, -.2, "RIGHT HAND ZONE", color='black', alpha=0.5, fontsize=14, weight='bold', ha='center')
     
 
     ax.grid(True, axis='y', alpha=0.3)
-    ax.legend(loc='lower left', fontsize=12, framealpha=0.9)
+    #ax.legend(loc='lower left', fontsize=12, framealpha=0.9)
     plt.tight_layout()
     
     if(print_plot == 1):
@@ -818,13 +842,14 @@ def plot_robot_movement(all_notes, rh_times, rh_path_cm, right_config, print_plo
 
 import os
 
-def compile_cnc_schedule(midi_filepath, right_hand_config):
+def compile_cnc_schedule(midi_filepath, right_hand_config, show_error = 1):
     # --- 1. SYNC THE MATH ---
     # Force Pathfinder to obey the GUI finger config
     global ROBOT_FINGERS
     ROBOT_FINGERS = right_hand_config
 
-    print(f"GUI selected file: {midi_filepath}")
+    if show_error:
+        print(f"GUI selected file: {midi_filepath}")
     
     # --- 2. OS PATH FILTERING & TELEPORTATION ---
     base_name = os.path.basename(midi_filepath)
@@ -833,7 +858,8 @@ def compile_cnc_schedule(midi_filepath, right_hand_config):
     # Teleport Python's working directory so midi_utils can find the config/ folder
     target_dir = os.path.dirname(os.path.dirname(midi_filepath))
     os.chdir(target_dir)
-    print(f"Re-aligned working directory to: {target_dir}")
+    if show_error:
+        print(f"Re-aligned working directory to: {target_dir}")
     
     # --- 3. EXTRACT & PREVIEW ---
     # Extract ALL notes using your untouched utility
@@ -848,16 +874,20 @@ def compile_cnc_schedule(midi_filepath, right_hand_config):
     left_hand_notes = [n for n in all_notes if n.pitch <= LH_MAX_PITCH]
     right_hand_notes = [n for n in all_notes if RH_MIN_PITCH <= n.pitch <= RH_MAX_PITCH]
     
-    print(f"Found {len(left_hand_notes)} bass notes and {len(right_hand_notes)} melody notes.")
+    if show_error:
+        print(f"Found {len(left_hand_notes)} bass notes and {len(right_hand_notes)} melody notes.")
     
     # --- 5. PATHFINDING & COMPILATION ---
-    print("Running pathfinding algorithm on Right Hand...")
+    if show_error:
+        print("Running pathfinding algorithm on Right Hand...")
     rh_times, rh_path_cm = find_best_time_path(right_hand_notes)
     
     if not rh_times:
-        print("WARNING: No valid path found! The chord might be physically impossible to span.")
+        if print:
+            print("WARNING: No valid path found! The chord might be physically impossible to span.")
     else:
-        print("Path found. Generating C code...")
+        if show_error:
+            print("Path found. Generating C code...")
         c_code = generate_c_command_array(
             left_notes=left_hand_notes, 
             right_notes=right_hand_notes, 
@@ -879,6 +909,7 @@ def compile_cnc_schedule(midi_filepath, right_hand_config):
         with open(out_path, "w") as f:
             f.write(c_code)
             
-        print(f"✅ Successfully saved C array to '{out_path}'!")
+        if show_error:
+            print(f"✅ Successfully saved C array to '{out_path}'!")
         
         return c_code, fig
