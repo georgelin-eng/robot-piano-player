@@ -1,10 +1,10 @@
 #include <stdio.h>             // Standard IO
 #include "RP2040_PWM.h"        // PWM
 #include "pins.h"              // pin to variable mappings
-#include "commands.h"          // command table
+// #include "commands.h"          // command table
 #include "stiction_map.h"          // command table
 //#include "cust_commands.h"        // command table
-// #include "led_commands.h" 
+#include "led_commands.h" 
 #include "peripherals.h"       // ISRs for interacting with peripherals
 #include "PID.h"               // PID functions
 #include "logging.h"           // logging functions
@@ -283,6 +283,11 @@ void loop() {
     // --------- FSM BEGIN ---------
     switch(state) {
         case(IDLE):
+
+            //Turn off all solenoids
+            for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
+                set_note_state(i, LOW);
+            }
             PIDController_Init(&PID);
 
             sprintf(LCD_BUFFER, "IDLE");
@@ -334,7 +339,11 @@ void loop() {
             break;
 
         case(RUN_INIT):
-           
+
+            //Make sure no solenoids are actuated just a backup in case we leave it on
+            for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
+                set_note_state(i, LOW);
+            }
 
             command_idx = 0;    
 
@@ -409,8 +418,7 @@ void loop() {
             song_elapsed_time = millis()/1000.0 - song_start_time - offset;
 
             action_type       = schedule[command_idx].action;
-            action_start_time = schedule[command_idx].start_time;
-            action_end_time   = schedule[command_idx].end_time;
+            action_start_time = schedule[command_idx].time;
 
             if (command_idx == SCHEDULE_LENGTH - 1) {
                 lcd.setDataAddr(LCD_Line1Start);
@@ -434,35 +442,15 @@ void loop() {
                 // previous vs last target position determines the size of the movement
                 // hence which set of PID values to use
                 if (command_idx == 0) {
-                    PID_move_size_mm = schedule[command_idx].solenoid_or_position - INITIAL_MOTOR_POSITION_MM;
+                    PID_move_size_mm = schedule[command_idx].position_mm - INITIAL_MOTOR_POSITION_MM;
                 } else {
-                    PID_move_size_mm = schedule[command_idx].solenoid_or_position - PID_prev_setpoint_mm;
+                    PID_move_size_mm = schedule[command_idx].position_mm - PID_prev_setpoint_mm;
                 }
 
                  PIDController_GainSchedule(&PID, &K_large, &K_small, PID_move_size_mm);
 
                 if(millis() - prev_pid_time  >= PID_CONTROL_INTERVAL*1e3){
                     prev_pid_time = millis();
-
-
-                  //  PIDController_GainSchedule(&PID, &K_large, &K_small, PID.error*KJT*1000.0);
-                    // --- GENERATE TRIANGULAR DITHER ---
-                    /*
-                        To decrease the effect of static friction, we add a
-                        triangular dither to our output
-                    */
-
-                    double dither_amp = 0.10;  // Peak amplitude to break stiction
-                    double dither_step = 0.02; // How fast the triangle wave moves per 1ms tick
-
-                    dither_val += (dither_step * dither_dir);
-                    if (dither_val >= dither_amp) {
-                        dither_val = dither_amp;
-                        dither_dir = -1.0; // Turn around and go down
-                    } else if (dither_val <= -dither_amp) {
-                        dither_val = -dither_amp;
-                        dither_dir = 1.0;  // Turn around and go up
-                    }
 
                     /*
                     PID error being too low can result in being stuck in this loop for a long time
@@ -477,7 +465,7 @@ void loop() {
                         offset = (millis()/1000.0 - song_start_time) - action_end_time;
                     }
 
-                    wanted_rad = schedule[command_idx].solenoid_or_position * KTJ/1000.0;
+                    wanted_rad = schedule[command_idx].position_mm * KTJ/1000.0;
                     prev_measured_rad = measured_rad;
                     measured_rad = pulseCount * RAD_PER_PULSE;
 
@@ -485,7 +473,7 @@ void loop() {
                     pid_output = PIDController_Update(&PID, wanted_rad, measured_rad);
                     // PIDController_IntegralUpdate(&PID, &IntCoeff);
 
-                    if (real_abs(PID.error) < ANGLE_ERR_THRS && song_elapsed_time >= action_end_time) {
+                    if (real_abs(PID.error) < ANGLE_ERR_THRS) {
                         if (pid_error_settle_first_time_entry) {
                             pid_within_error_time = millis();
                             pid_error_settle_first_time_entry = 0;
@@ -504,9 +492,9 @@ void loop() {
                         */
 
                         if (millis() - pid_within_error_time >= PID_ERROR_SETTLE_MS) {
-                            PID_prev_setpoint_mm = schedule[command_idx].solenoid_or_position;
+                            PID_prev_setpoint_mm = schedule[command_idx].position_mm;
 
-                            PID_settle_time = millis()/1000.0 - action_end_time - offset;
+                            PID_settle_time = millis()/1000.0 - action_start_time - offset;
 
                             if(PID_settle_time > worst_PID_settle_time) {
                                 worst_PID_settle_time = PID_settle_time;
@@ -553,32 +541,27 @@ void loop() {
                     }
                 }
             }
-            else if (action_type == PLAY & (song_elapsed_time > action_start_time)){
+            else if (action_type == SOLENOID_ON && (song_elapsed_time > action_start_time)){
                 // DECODE
-                uint32_t mask = schedule[command_idx].solenoid_or_position;
+                uint32_t mask = schedule[command_idx].solenoid_mask;
 
                 sprintf(LCD_BUFFER, "%0d: R_P %0d", command_idx, mask);
                 LCD_Log(LCD_BUFFER, 1);
 
-                // sprintf(LCD_BUFFER, "t=%0.1lf, e=%0.1lf", song_elapsed_time, action_end_time);
-                // LCD_Log(LCD_BUFFER, 2);
-                
                 for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
-                    if (mask & (1 << i)){
-                        set_note_state(i, HIGH);
-                    }
-                    else{
-                        set_note_state(i, LOW);
-                    }
+                    if (mask & (1 << i)) set_note_state(i, HIGH);
                 }
-                //3 CHECK TIME
-                if (song_elapsed_time >= action_end_time){
-                    for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
-                        set_note_state(i, LOW);
-                    }
 
-                    command_idx++;
+                command_idx++;
+            }
+            else if (action_type == SOLENOID_OFF && (song_elapsed_time > action_start_time)) {
+                uint32_t mask = schedule[command_idx].solenoid_mask;
+
+                for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
+                    if (mask & (1 << i))set_note_state(i, LOW);
                 }
+
+                command_idx++;
             }
         
             break;
@@ -684,6 +667,7 @@ void set_note_state (int ith_finger, bool state){
         doesn't get reset when parsing the other, we use an if statement
         to separate this logic so the default doesn't get hit. 
     */
+
     if (ith_finger <= 11) {
         switch (ith_finger)
         {
@@ -724,8 +708,8 @@ void set_note_state (int ith_finger, bool state){
                 mcp_main.digitalWrite(SOLENOID_L_12, state);
                 break;
             default:
-                mcp_main.digitalWrite(SOLENOID_L_1,  LOW);
-                mcp_main.digitalWrite(SOLENOID_L_2,  LOW);
+                mcp_main.digitalWrite(SOLENOID_L_1,  HIGH);
+                mcp_main.digitalWrite(SOLENOID_L_2,  HIGH);
                 mcp_main.digitalWrite(SOLENOID_L_3,  LOW);
                 mcp_main.digitalWrite(SOLENOID_L_4,  LOW);
                 mcp_main.digitalWrite(SOLENOID_L_5,  LOW);
