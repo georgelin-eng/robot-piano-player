@@ -120,7 +120,7 @@ def get_valid_hand_positions(chord_data):
         chord_covered = True
         
         #If the head position is too far then its not a valid hand position
-        if(h + max_finger_offset > get_note_position_cm(RH_MIN_PITCH) or h < 0):
+        if(h + max_finger_offset > get_note_position_cm(RH_MIN_PITCH) + 0.5 or h < 0 -0.5):
            chord_covered = False
            continue
         
@@ -397,7 +397,6 @@ from itertools import groupby
 
 def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm, right_config, left_config):
     
-    # --- 1. INITIAL SETUP ---
     initial_setup_cm = right_path_cm[0] if right_path_cm else 0.0
     initial_setup_mm = round(float(initial_setup_cm * 10.0), 3)
     
@@ -408,7 +407,6 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
     current_pos = initial_setup_cm 
     TIME_OFFSET = 0.5 
     
-    # --- STEP 1: GENERATE ALL MOTOR MOVES ---
     master_start_times = sorted(list(set([round(n.start, 3) for n in all_notes])))
     for t in master_start_times:
         rounded_t = round(t, 3)
@@ -429,11 +427,10 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
                 })
                 current_pos = target_pos
 
-    # --- STEP 2: GENERATE ON/OFF EVENTS FOR EVERY NOTE ---
     for note in all_notes:
         bitmask = 0
         
-        # Determine the bitmask for THIS specific note
+        # Determine the bitmask for specific note
         if note.pitch <= LH_MAX_PITCH:
             if note.pitch in left_config:
                 bitmask = (1 << left_config[note.pitch])
@@ -442,7 +439,6 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
             is_black = is_black_key(note.pitch)
             rounded_start = round(note.start, 3)
             
-            # Find where the motor is scheduled to be right now
             if rounded_start in right_pos_map:
                 motor_pos_at_start = right_pos_map[rounded_start]
                 for finger in right_config:
@@ -453,21 +449,18 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
                         bitmask = (1 << (finger['id'] + 12)) 
                         break
         
-        # If a finger was successfully mapped, schedule the ON and OFF events
+        # If a finger is successfully mapped, schedule  ON / OFF events
         if bitmask > 0:
-            # Enforce minimum actuation time (0.1 seconds) natively here
+            # Enforce minimum actuation time 
             duration = note.end - note.start
             actual_end_time = note.end if duration >= 0.1 else (note.start + 0.1)
             
             raw_events.append({'time': round(note.start + TIME_OFFSET, 3), 'type': 'ON', 'val': bitmask})
             raw_events.append({'time': round(actual_end_time + TIME_OFFSET, 3), 'type': 'OFF', 'val': bitmask})
 
-    # --- STEP 3: COMPRESS & CHRONOLOGIZE EVENTS ---
-    # Sort everything by exact millisecond
     raw_events.sort(key=lambda x: x['time'])
     
     commands = []
-    # Group events that happen at the exact same millisecond together
     for t, group in groupby(raw_events, key=lambda x: x['time']):
         move_val = None
         on_mask = 0
@@ -478,25 +471,22 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
             elif ev['type'] == 'ON': on_mask |= ev['val']
             elif ev['type'] == 'OFF': off_mask |= ev['val']
             
-        # Order of operations at any given millisecond:
-        # 1. Turn OFF finished notes (Frees up power for the power supply)
+
         if off_mask > 0:
             commands.append({'time': t, 'action': 'SOLENOID_OFF', 'data': off_mask})
-        # 2. Trigger Motor moves
         if move_val is not None:
             commands.append({'time': t, 'action': 'MOVE', 'data': move_val})
-        # 3. Turn ON new notes
         if on_mask > 0:
             commands.append({'time': t, 'action': 'SOLENOID_ON', 'data': on_mask})
 
-    # --- STEP 4: WRITE THE C CODE ---
+
     c_code = "#define MOVE 0\n"
     c_code += "#define SOLENOID_ON 1\n"
     c_code += "#define SOLENOID_OFF 2\n\n"
     
     c_code += f"const float INITIAL_MOTOR_POSITION_MM = {initial_setup_mm}f;\n\n"
     
-    # The Upgraded Struct
+    #Changed the structure to accomodate more commands also split up solenoid vs position incase float vs int was causing issues
     c_code += "struct command {\n"
     c_code += "    float time;\n"
     c_code += "    uint8_t action;\n"

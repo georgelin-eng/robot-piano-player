@@ -1,10 +1,10 @@
 #include <stdio.h>             // Standard IO
 #include "RP2040_PWM.h"        // PWM
 #include "pins.h"              // pin to variable mappings
-// #include "commands.h"          // command table
+#include "commands.h"          // command table
 #include "stiction_map.h"          // command table
 //#include "cust_commands.h"        // command table
-#include "led_commands.h" 
+//#include "led_commands.h" 
 #include "peripherals.h"       // ISRs for interacting with peripherals
 #include "PID.h"               // PID functions
 #include "logging.h"           // logging functions
@@ -34,9 +34,9 @@
 #define K0 0.6// 0.6 works good
 
 // Small movement PID values
-#define PID_S_KP (0.0567 * K0 ) * 0.0315// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
+#define PID_S_KP (0.0567 * K0 ) * 0.035// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
 #define PID_S_KI (0.00067091 * K0 ) * 1.45//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
-#define PID_S_KD (0.0011 * K0 )*0.01*0.25*0.8//0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
+#define PID_S_KD (0.0011 * K0 )*0.01*0.25*0.5//0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
 
 // large movement PID values
 #define PID_L_KP (0.0567 * K0) * 0.123 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
@@ -308,8 +308,8 @@ void loop() {
             if (real_abs(speed_cmps) < TARGET_HOME_SPEED) {
                 pwm_dc = pwm_dc + 1;
 
-                if (pwm_dc >= 20) {
-                    pwm_dc = 20;
+                if (pwm_dc >= 30) {
+                    pwm_dc = 30;
                 }
             } else if (real_abs(speed_cmps) > TARGET_HOME_SPEED) {
                 pwm_dc = pwm_dc - 1;
@@ -441,6 +441,12 @@ void loop() {
                 */
                 // previous vs last target position determines the size of the movement
                 // hence which set of PID values to use
+
+            //Make sure we turn off solenoids before moving on RH
+                for (int i = 12; i < FINGERS_IN_EXISTENCE; i ++){
+                     set_note_state(i, LOW);
+                 }
+
                 if (command_idx == 0) {
                     PID_move_size_mm = schedule[command_idx].position_mm - INITIAL_MOTOR_POSITION_MM;
                 } else {
@@ -461,8 +467,8 @@ void loop() {
                     of the offset as well. Offset should grow based on the sum of the total
                     time delta from when the PID loop allows things to end and action end time
                     */
-                    if (song_elapsed_time >= action_end_time) {
-                        offset = (millis()/1000.0 - song_start_time) - action_end_time;
+                    if (song_elapsed_time >= schedule[command_idx + 1].time) {
+                        offset = (millis()/1000.0 - song_start_time) - schedule[command_idx + 1].time;
                     }
 
                     wanted_rad = schedule[command_idx].position_mm * KTJ/1000.0;
@@ -551,7 +557,7 @@ void loop() {
                 for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
                     if (mask & (1 << i)) set_note_state(i, HIGH);
                 }
-
+                delay(100);
                 command_idx++;
             }
             else if (action_type == SOLENOID_OFF && (song_elapsed_time > action_start_time)) {
