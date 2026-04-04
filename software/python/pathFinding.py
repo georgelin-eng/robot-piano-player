@@ -498,7 +498,10 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
         if on_mask > 0:
             commands.append({'time': t, 'action': 'SOLENOID_ON', 'data': on_mask})
 
-    c_code = "#define MOVE 0\n"
+    c_code = "#ifndef COMMANDS_H\n"
+    c_code += "#define COMMANDS_H\n\n"
+
+    c_code += "#define MOVE 0\n"
     c_code += "#define SOLENOID_ON 1\n"
     c_code += "#define SOLENOID_OFF 2\n\n"
     
@@ -912,8 +915,13 @@ def compile_cnc_schedule(midi_filepath, right_hand_config, show_error = 1):
         out_path = "robot_schedule.h"
         with open(out_path, "w") as f:
             f.write(c_code)
-            
+
+        command_path = os.path.abspath(os.path.join(target_dir, os.pardir, "src", "main", "commands.h"))
+        os.makedirs(os.path.dirname(command_path), exist_ok=True)
+        with open(command_path, "w") as f:
+            f.write(c_code)
+
         if show_error:
-            print(f"✅ Successfully saved C array to '{out_path}'!")
+            print(f"✅ Successfully saved C array to '{out_path}' and '{command_path}'!")
         
         return c_code, fig
