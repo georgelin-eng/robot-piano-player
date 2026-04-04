@@ -820,6 +820,8 @@ class RobotPianoGUI:
                 left_hand_notes = [n for n in notes if n.pitch <= pathFinding.LH_MAX_PITCH]
                 left_pitches = [note.pitch for note in left_hand_notes]
                 
+                # print(f"Left hand pitches: {left_pitches}")
+
                 # Count frequency of each pitch
                 pitch_counts = {}
                 for pitch in left_pitches:
@@ -828,9 +830,11 @@ class RobotPianoGUI:
                 # Determine which keys are used based on the LEFT_FINGERS mapping
                 self.left_hand_keys = {}
                 for pitch, count in pitch_counts.items():
-                    if pitch - 12 in pathFinding.LEFT_FINGERS:
-                        finger_id = pathFinding.LEFT_FINGERS[pitch - 12]
+                    if pitch in pathFinding.LEFT_FINGERS:
+                        finger_id = pathFinding.LEFT_FINGERS[pitch]
                         self.left_hand_keys[finger_id] = count
+                
+                # print(f"Left hand fingers: {pathFinding.LEFT_FINGERS}")
 
                 # Draw the left hand piano
                 self.draw_left_hand_piano()
