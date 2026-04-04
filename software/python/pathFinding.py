@@ -458,7 +458,7 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
         
         if bitmask > 0:
             #minimum duration of 0.1s to ensure solenoid actuation, can be adjusted based on hardware capabilities
-            duration = max(0.1, note.end - note.start)
+            duration = max(0.15, note.end - note.start)
             on_time = round(note.start + TIME_OFFSET, 3)
             off_time = round(note.start + duration + TIME_OFFSET, 3)
             
