@@ -34,9 +34,9 @@
 #define K0 0.6// 0.6 works good
 
 // Small movement PID values
-#define PID_S_KP (0.0567 * K0 ) * 0.038// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
-#define PID_S_KI (0.00067091 * K0 ) * 1.4//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
-#define PID_S_KD (0.0011 * K0 )*0.01*0.25*0.44//0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
+#define PID_S_KP (0.0567 * K0 ) * 0.123// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
+#define PID_S_KI (0.00067091 * K0 ) * 450 //(0.00067091 * K0 * 260) *0.00000021 // * 1.45
+#define PID_S_KD (0.0011 * K0 )*0.01*0.32//0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
 
 // large movement PID values
 #define PID_L_KP (0.0567 * K0) * 0.123 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
@@ -378,7 +378,10 @@ void loop() {
             break;
 
         case(RUN):
+            sprintf(LCD_BUFFER, "id%0d: S, %0d", command_idx, PID_move_size_mm);
+                LCD_Log(LCD_BUFFER, 1);
 
+                
             if (song_start != 1){
                 song_start = 1;
                 song_start_time = millis()/1000.0; // convert to seconds
@@ -426,6 +429,7 @@ void loop() {
                     }
                 else if (action_type == SOLENOID_ON){
                     uint32_t mask = schedule[command_idx].solenoid_mask;
+                    int safe_to_fire = 1; 
 
                     if (mask >= 4096) {
                         
@@ -434,8 +438,7 @@ void loop() {
                                 rh_wait_start_time = millis();
                                 is_waiting_for_rh = 1;
                             }
-
-                            break; 
+                            safe_to_fire = 0; 
                         } 
                         else {
                             if (is_waiting_for_rh == 1) {
@@ -446,11 +449,17 @@ void loop() {
                         }
                     }
 
-                    for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
-                        if (mask & (1 << i)) set_note_state(i, HIGH);
+                    // ONLY fire the solenoids and advance the index if we passed the failsafe
+                    if (safe_to_fire == 1) {
+                        sprintf(LCD_BUFFER, "%0d: R_P %0d", command_idx, mask);
+                        LCD_Log(LCD_BUFFER, 1);
+
+                        for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
+                            if (mask & (1 << i)) set_note_state(i, HIGH);
+                        }
+                        
+                        command_idx++;
                     }
-                    
-                    command_idx++;
                 }
 
                 else if (action_type == SOLENOID_OFF) {
