@@ -11,8 +11,7 @@
 #include <Adafruit_MCP23X17.h> // I2C expander library
 
 #include <LCD1602.h>           // LCD library
-#include "I2CScanner.h"        // I2C device scanning
-
+#include "I2CScanner.h"        // I2C device scanningb
 #include <string>
 
 // ----------- DEFINITIONS --------------
@@ -34,16 +33,16 @@
 #define K0 0.6// 0.6 works good
 
 // Small movement PID values
-#define PID_S_KP (0.0567 * K0 ) * 0.123// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
-#define PID_S_KI (0.00067091 * K0 ) * 450 //(0.00067091 * K0 * 260) *0.00000021 // * 1.45
-#define PID_S_KD (0.0011 * K0 )*0.01*0.32//0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
+#define PID_S_KP (0.0567 * K0 ) * 0.095// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
+#define PID_S_KI (0.00067091 * K0 ) * 1//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
+#define PID_S_KD (0.0011 * K0 )*0.01*0.25*0.8 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
 
 // large movement PID values
-#define PID_L_KP (0.0567 * K0) * 0.123 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
+#define PID_L_KP (0.0567 * K0) * 0.126 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
 #define PID_L_KI (0.00067091 * K0 ) * 450// (0.00067091 * K0 * 200) *0.000005  // * 1.45
-#define PID_L_KD (0.0011 * K0)*0.01*0.32 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012 
+#define PID_L_KD (0.0011 * K0)*0.01*0.27 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012 
 
-#define PID_MIN_MOVE 40 // mm
+#define PID_MIN_MOVE 30 // mm
 #define PID_MAX_MOVE 80 // mm
 
 #define PID_STICTION 0.01 // feedforward control for stiction (WIP)

@@ -370,28 +370,7 @@ def print_finger_assignments(times, path_cm, notes):
             print(f"{t:<8.2f} | {hand_cm:<10.2f} | {p:<6} | {note_type:<6} | Finger {assigned_id} ({assigned_type})")
             
             
-"""Solenoid Windup Filter gives a minimum 'actuation time' to action. If action is lower then wanted time,
-    will set the action lenght to the minimum and proportionally shift rest of the song."""
-def apply_actuation_limits(commands, min_actuation_time_sec):
-    accumulated_shift = 0.0
-    
-    for cmd in commands:
-        
-        #Add windup from previous command shifts
-        cmd['start'] += accumulated_shift
-        cmd['end'] += accumulated_shift
-        
-        duration = cmd['end'] - cmd['start']
-        
-        if duration < min_actuation_time_sec:
-            time_deficit = min_actuation_time_sec - duration
-            
-            #modify current endtime
-            cmd['end'] += time_deficit
-            
-            accumulated_shift += time_deficit
-            
-    return commands
+
             
 from itertools import groupby
 
@@ -478,6 +457,7 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
                         break
         
         if bitmask > 0:
+            #minimum duration of 0.1s to ensure solenoid actuation, can be adjusted based on hardware capabilities
             duration = max(0.1, note.end - note.start)
             on_time = round(note.start + TIME_OFFSET, 3)
             off_time = round(note.start + duration + TIME_OFFSET, 3)
