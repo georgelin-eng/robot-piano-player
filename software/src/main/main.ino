@@ -72,7 +72,6 @@
 
 // PID error debounce parameters
 #define PID_ERROR_SETTLE_MS 50
-#define PID_TIMEOUT_MS      2500
 
 #define FINGERS_IN_EXISTENCE 20
 
@@ -114,7 +113,6 @@ enum eFSM_STATE {
     HOME,
     RUN_INIT,
     RUN,
-    RUN_LH_ONLY,
     PAUSE, 
     ERROR,
     DONE,
@@ -251,8 +249,9 @@ void loop() {
     static double prev_measured_rad;
     static double wanted_rad;
     static unsigned long prev_pid_time = 0;
-    static unsigned long action_start_time_w_offset;
     static double stiction_coeff;
+    static unsigned long rh_wait_start_time = 0;
+    static int is_waiting_for_rh = 0;
 
     static double   pid_within_error_time;
     static int      pid_error_settle_first_time_entry = 1;
@@ -265,7 +264,6 @@ void loop() {
 
     static double song_start_time = 0; // time when song starts, used to track elapsed time for command scheduling
     static double song_start = 0;
-    static double action_start = 0;
     static double offset = 0;
     static double song_elapsed_time; // time elapsed since start of song
     static double action_start_time = 0; // start time of each action command
@@ -277,6 +275,7 @@ void loop() {
     static int action_type;  // TODO: Make this an enum
     static int command_idx = 0;
     static uint16_t wanted_position;
+    static int motor_is_awake = 0;
 
     static double speed_cmps;
     static int pwm_dc = 0;
@@ -383,43 +382,10 @@ void loop() {
             if (song_start != 1){
                 song_start = 1;
                 song_start_time = millis()/1000.0; // convert to seconds
-                PIDController_Init(&PID);
-            }
+                 PIDController_Init(&PID);
 
-            if (action_start != 1) {
-                action_start = 1;
-                action_start_time_w_offset = millis();
             }
-
-            if(millis() - action_start_time_w_offset >= PID_TIMEOUT_MS){
-                state = RUN_LH_ONLY;
-            }
-
-            // Command parsing and the PID control loop happen at the same interval. 
-            // at 80Hz this becomes a 12.5ms delay in command parsing. 
             
-            // NOTE: Code is written for just one hand (RH)
-            // play notes when we've hit start time of command
-            // increment command index when we've reached the end time of the current command
-
-            /*
-                1. read command type (MOVE / PLAY)
-                    1.1
-                    Movement commands:
-
-                    start time - 
-                    end time -
-                    error < X -> Parse next command
-
-                    1.2
-                    Play Command
-                    start time -
-                    Song Run time > start time -> Play
-                    Decode using or command, actuate using for loop (i2c)
-                    end time -> Parse next command
-                    
-
-            */
             
             song_elapsed_time = millis()/1000.0 - song_start_time - offset;
 
@@ -432,194 +398,113 @@ void loop() {
                 lcd.setDataAddr(LCD_Line2Start);
                 lcd.clear();    
                 state = DONE;
-
                 song_play_time = millis()/1000.0 - song_start_time;
+
+                break;
             }
 
             // PID loop
-            if (action_type == MOVE){
-                // sprintf(LCD_BUFFER, "%0d: R_MOVE", command_idx);
-                // LCD_Log(LCD_BUFFER, 1);
-
-
-                /*
-
-                */
-                // previous vs last target position determines the size of the movement
-                // hence which set of PID values to use
-
+            if (song_elapsed_time >= action_start_time) {
+                if (action_type == MOVE){
                 //Make sure we turn off solenoids before moving on RH
-                for (int i = 12; i < FINGERS_IN_EXISTENCE; i ++){
-                     set_note_state(i, LOW);
-                 }
+                    motor_is_awake = 1;
+                    for (int i = 12; i < FINGERS_IN_EXISTENCE; i ++){
+                        set_note_state(i, LOW);
+                    }
 
-                if (command_idx == 0) {
-                    PID_move_size_mm = schedule[command_idx].position_mm - INITIAL_MOTOR_POSITION_MM;
-                } else {
-                    PID_move_size_mm = schedule[command_idx].position_mm - PID_prev_setpoint_mm;
-                }
-
-                 PIDController_GainSchedule(&PID, &K_large, &K_small, PID_move_size_mm);
-
-
-                if(millis() - prev_pid_time  >= PID_CONTROL_INTERVAL*1e3){
-                    prev_pid_time = millis();
-
-                    /*
-                    PID error being too low can result in being stuck in this loop for a long time
-                    This can cause subsequant play commands to get skipped. We fix this
-                    be keeping song_elapsed_time the same value by subtracting an offset
+                    if (command_idx == 0) {
+                        PID_move_size_mm = schedule[command_idx].position_mm - INITIAL_MOTOR_POSITION_MM;
+                    } else {
+                        PID_move_size_mm = schedule[command_idx].position_mm - PID_prev_setpoint_mm;
+                    }
                     
-                    since millis() continuously grows, we need to use it in the calculation
-                    of the offset as well. Offset should grow based on the sum of the total
-                    time delta from when the PID loop allows things to end and action end time
-                    */
-                    if (song_elapsed_time >= schedule[command_idx + 1].time) {
-                        offset = (millis()/1000.0 - song_start_time) - schedule[command_idx + 1].time;
+                    wanted_rad =  schedule[command_idx].position_mm * KTJ/1000.0;
+                    PIDController_GainSchedule(&PID, &K_large, &K_small, PID_move_size_mm);
+                    PIDController_Init(&PID); 
+                    pid_error_settle_first_time_entry = 1;
+                    command_idx++;
                     }
+                else if (action_type == SOLENOID_ON){
+                    uint32_t mask = schedule[command_idx].solenoid_mask;
 
-                    wanted_rad = schedule[command_idx].position_mm * KTJ/1000.0;
-                    prev_measured_rad = measured_rad;
-                    measured_rad = pulseCount * RAD_PER_PULSE;
-
-                    // calculate the error first for use in the loop
-                    pid_output = PIDController_Update(&PID, wanted_rad, measured_rad);
-                    // PIDController_IntegralUpdate(&PID, &IntCoeff);
-
-
-
-                    if (real_abs(PID.error) < ANGLE_ERR_THRS) {
-                        if (pid_error_settle_first_time_entry) {
-                            pid_within_error_time = millis();
-                            pid_error_settle_first_time_entry = 0;
-                        }
-
-                        /*
-                            A debounce is added to make sure we don't exit when we first
-                            hit the setpoint. However, we assume that oscillation period
-                            is smaller than this pid error debounce period. 
-                        */
-
-                        if (millis() - pid_within_error_time >= PID_ERROR_SETTLE_MS) {
-                            PID_prev_setpoint_mm = schedule[command_idx].position_mm;
-
-                            PID_settle_time = millis()/1000.0 - action_start_time - offset;
-
-                            if(PID_settle_time > worst_PID_settle_time) {
-                                worst_PID_settle_time = PID_settle_time;
+                    if (mask >= 4096) {
+                        
+                        if (motor_is_awake) {
+                            if (is_waiting_for_rh == 0) {
+                                rh_wait_start_time = millis();
+                                is_waiting_for_rh = 1;
                             }
-                            action_start = 0;
-                            command_idx++;
-                            PIDController_Init(&PID);
-                            set_PWM(0);
 
-                            pid_error_settle_first_time_entry = 1;
+                            break; 
+                        } 
+                        else {
+                            if (is_waiting_for_rh == 1) {
+                                double wait_duration_sec = (millis() - rh_wait_start_time) / 1000.0;
+                                offset += wait_duration_sec; 
+                                is_waiting_for_rh = 0;
+                            }
                         }
                     }
-                    else if (real_abs(PID.error) >= ANGLE_ERR_THRS) {
-                        
-                        if (measured_rad*KJT*1000 >= 240 && prev_measured_rad == measured_rad){
-                            stiction_coeff = PID_STICTION_SIDES + 0.1;
-                        }
-                        else if (prev_measured_rad == measured_rad){
-                            stiction_coeff = PID_STICTION_MIDDLE;
-                        }
 
-                        else stiction_coeff = 0;
+                    for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
+                        if (mask & (1 << i)) set_note_state(i, HIGH);
+                    }
+                    
+                    command_idx++;
+                }
 
-                        if (PID.error > 0) set_PWM(-(pid_output + stiction_coeff));
-                        else set_PWM(-(pid_output - stiction_coeff));
+                else if (action_type == SOLENOID_OFF) {
+                    uint32_t mask = schedule[command_idx].solenoid_mask;
 
-                        
-                        pid_error_settle_first_time_entry = 1;
+                    for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
+                        if (mask & (1 << i))set_note_state(i, LOW);
+                    }
+
+                    command_idx++;
+                }
+            }
+            if(millis() - prev_pid_time >= PID_CONTROL_INTERVAL*1e3 && motor_is_awake){
+                prev_pid_time = millis();
+
+                prev_measured_rad = measured_rad;
+                measured_rad = pulseCount * RAD_PER_PULSE;
+
+                pid_output = PIDController_Update(&PID, wanted_rad, measured_rad);
+
+                if (real_abs(PID.error) < ANGLE_ERR_THRS) {
+                    if (pid_error_settle_first_time_entry) {
                         pid_within_error_time = millis();
-                        
-                        sprintf(LCD_BUFFER, "ya=%0.1f,yd=%0.1f", measured_rad*KJT*1000,  wanted_rad*KJT*1000);
-                        LCD_Log(LCD_BUFFER, 1);
-    
-                        if (abs(PID_move_size_mm) < PID_MIN_MOVE) {
-                            sprintf(LCD_BUFFER, "id%0d: S, %0d", command_idx, PID_move_size_mm);
-                            LCD_Log(LCD_BUFFER, 2);
-                        }
-                        else if (abs(PID_move_size_mm) < PID_MAX_MOVE) {
-                            sprintf(LCD_BUFFER, "id%0d: M, %0d", command_idx, PID_move_size_mm);
-                            LCD_Log(LCD_BUFFER, 2);
-                        } else {
-                            sprintf(LCD_BUFFER, "id%0d: L, %0d", command_idx, PID_move_size_mm);
-                            LCD_Log(LCD_BUFFER, 2);
-                        }
+                        pid_error_settle_first_time_entry = 0;
+                    }
+
+                    if (millis() - pid_within_error_time >= PID_ERROR_SETTLE_MS) {
+                        PID_prev_setpoint_mm = wanted_rad *1000.0 / KTJ;
+
+                        set_PWM(0); 
+                        motor_is_awake = 0;
+  
                     }
                 }
-            }
-            else if (action_type == SOLENOID_ON && (song_elapsed_time > action_start_time)){
-                // DECODE
-                uint32_t mask = schedule[command_idx].solenoid_mask;
+                else if (real_abs(PID.error) >= ANGLE_ERR_THRS) {
+                    
+                    if (measured_rad*KJT*1000 >= 240 && prev_measured_rad == measured_rad){
+                        stiction_coeff = PID_STICTION_SIDES + 0.1;
+                    }
+                    else if (prev_measured_rad == measured_rad){
+                        stiction_coeff = PID_STICTION_MIDDLE;
+                    }
+                    else stiction_coeff = 0;
 
-                sprintf(LCD_BUFFER, "%0d: R_P %0d", command_idx, mask);
-                LCD_Log(LCD_BUFFER, 1);
+                    if (PID.error > 0) set_PWM(-(pid_output + stiction_coeff));
+                    else set_PWM(-(pid_output - stiction_coeff));
+                    
+                    pid_error_settle_first_time_entry = 1;
+                    pid_within_error_time = millis();
 
-                for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
-                    if (mask & (1 << i)) set_note_state(i, HIGH);
                 }
-                
-                command_idx++;
-                action_start = 0;
             }
-            else if (action_type == SOLENOID_OFF && (song_elapsed_time > action_start_time)) {
-                uint32_t mask = schedule[command_idx].solenoid_mask;
-
-                for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
-                    if (mask & (1 << i))set_note_state(i, LOW);
-                }
-
-                command_idx++;
-                action_start = 0;
-            }
+            break;
         
-            break;
-        case(RUN_LH_ONLY):
-            song_elapsed_time = millis()/1000.0 - song_start_time - offset;
-
-            action_type       = schedule[command_idx].action;
-            action_start_time = schedule[command_idx].time;
-
-            if (command_idx == SCHEDULE_LENGTH - 1) {
-                lcd.setDataAddr(LCD_Line1Start);
-                lcd.clear();    
-                lcd.setDataAddr(LCD_Line2Start);
-                lcd.clear();    
-                state = DONE;
-
-                song_play_time = millis()/1000.0 - song_start_time;
-            }
-
-            if (action_type == SOLENOID_ON && (song_elapsed_time > action_start_time)){
-                // DECODE
-                uint32_t mask = schedule[command_idx].solenoid_mask;
-
-                sprintf(LCD_BUFFER, "%0d: R_P %0d", command_idx, mask);
-                LCD_Log(LCD_BUFFER, 1);
-
-                for (int i = 0; i < 12; i ++){
-                    if (mask & (1 << i)) set_note_state(i, HIGH);
-                }
-                command_idx++;
-                action_start = 0;
-            }
-            else if (action_type == SOLENOID_OFF && (song_elapsed_time > action_start_time)) {
-                uint32_t mask = schedule[command_idx].solenoid_mask;
-
-                for (int i = 0; i < 12; i ++){
-                    if (mask & (1 << i))set_note_state(i, LOW);
-                }
-
-                command_idx++;
-                action_start = 0;
-            }
-            
-            if(action_type == MOVE) state = RUN;
-
-            break;
         case(DONE):
             set_left_PWM(0);
             set_right_PWM(0);

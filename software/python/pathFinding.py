@@ -397,6 +397,7 @@ from itertools import groupby
 
 def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm, right_config, left_config):
     
+
     initial_setup_cm = right_path_cm[0] if right_path_cm else 0.0
     initial_setup_mm = round(float(initial_setup_cm * 10.0), 3)
     
@@ -406,32 +407,59 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
     raw_events = []
     current_pos = initial_setup_cm 
     TIME_OFFSET = 0.5 
-    
-    master_start_times = sorted(list(set([round(n.start, 3) for n in all_notes])))
-    for t in master_start_times:
-        rounded_t = round(t, 3)
-        if rounded_t in right_pos_map:
-            target_pos = right_pos_map[rounded_t]
+
+    rh_chord_natural_ends = {}
+    for note in right_notes:
+        rounded_start = round(note.start, 3)
+        duration = max(0.1, note.end - note.start)
+        end_t = rounded_start + duration
+        if rounded_start not in rh_chord_natural_ends:
+            rh_chord_natural_ends[rounded_start] = end_t
+        else:
+            rh_chord_natural_ends[rounded_start] = max(rh_chord_natural_ends[rounded_start], end_t)
+
+
+    free_to_move_time = 0.0
+    prev_chord_start = -TIME_OFFSET
+    move_departure_times = [] 
+
+    for i in range(len(right_times)):
+        t = round(right_times[i], 3)
+        target_pos = right_path_cm[i]
+        
+        if target_pos != current_pos:
+            dist = abs(target_pos - current_pos)
+            travel_duration = get_travel_time(dist)
             
-            if target_pos != current_pos:
-                dist = abs(target_pos - current_pos)
-                travel_duration = get_travel_time(dist)
-                
-                ideal_departure = (t + TIME_OFFSET) - travel_duration
-                actual_departure = max(0.0, ideal_departure) 
-                
-                raw_events.append({
-                    'time': round(actual_departure, 3),
-                    'type': 'MOVE',
-                    'val': round(float(target_pos * 10.0), 3)
-                })
-                current_pos = target_pos
+            ideal_departure = (t + TIME_OFFSET) - travel_duration
+            
+
+            early_departure = min(free_to_move_time, ideal_departure)
+            
+
+            actual_departure = max(prev_chord_start + TIME_OFFSET + 0.1, early_departure)
+            actual_departure = max(0.0, actual_departure) # No negative time
+            
+            raw_events.append({
+                'time': round(actual_departure, 3),
+                'type': 'MOVE',
+                'val': round(float(target_pos * 10.0), 3)
+            })
+            current_pos = target_pos
+            move_departure_times.append(round(actual_departure, 3))
+            
+        # Update timeline for the NEXT move loop
+        natural_end = rh_chord_natural_ends.get(t, t + 0.1)
+        free_to_move_time = natural_end + TIME_OFFSET
+        prev_chord_start = t
+
+    sorted_move_times = sorted(move_departure_times)
 
     for note in all_notes:
         bitmask = 0
+        is_right_hand = note.pitch > LH_MAX_PITCH
         
-        # Determine the bitmask for specific note
-        if note.pitch <= LH_MAX_PITCH:
+        if not is_right_hand:
             if note.pitch in left_config:
                 bitmask = (1 << left_config[note.pitch])
         else:
@@ -449,14 +477,26 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
                         bitmask = (1 << (finger['id'] + 12)) 
                         break
         
-        # If a finger is successfully mapped, schedule  ON / OFF events
         if bitmask > 0:
-            # Enforce minimum actuation time 
-            duration = note.end - note.start
-            actual_end_time = note.end if duration >= 0.1 else (note.start + 0.1)
+            duration = max(0.1, note.end - note.start)
+            on_time = round(note.start + TIME_OFFSET, 3)
+            off_time = round(note.start + duration + TIME_OFFSET, 3)
             
-            raw_events.append({'time': round(note.start + TIME_OFFSET, 3), 'type': 'ON', 'val': bitmask})
-            raw_events.append({'time': round(actual_end_time + TIME_OFFSET, 3), 'type': 'OFF', 'val': bitmask})
+            # If the motor is leaving early, we MUST lift the finger before it moves!
+            if is_right_hand:
+                next_move_time = float('inf')
+                for m_t in sorted_move_times:
+                    if m_t > on_time:
+                        next_move_time = m_t
+                        break
+                
+                if off_time >= next_move_time:
+                    #Force the solenoid off 5 milliseconds before the motor leaves
+                    off_time = round(next_move_time - 0.005, 3)
+
+            raw_events.append({'time': on_time, 'type': 'ON', 'val': bitmask})
+            raw_events.append({'time': off_time, 'type': 'OFF', 'val': bitmask})
+
 
     raw_events.sort(key=lambda x: x['time'])
     
@@ -471,7 +511,6 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
             elif ev['type'] == 'ON': on_mask |= ev['val']
             elif ev['type'] == 'OFF': off_mask |= ev['val']
             
-
         if off_mask > 0:
             commands.append({'time': t, 'action': 'SOLENOID_OFF', 'data': off_mask})
         if move_val is not None:
@@ -479,14 +518,12 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
         if on_mask > 0:
             commands.append({'time': t, 'action': 'SOLENOID_ON', 'data': on_mask})
 
-
     c_code = "#define MOVE 0\n"
     c_code += "#define SOLENOID_ON 1\n"
     c_code += "#define SOLENOID_OFF 2\n\n"
     
     c_code += f"const float INITIAL_MOTOR_POSITION_MM = {initial_setup_mm}f;\n\n"
     
-    #Changed the structure to accomodate more commands also split up solenoid vs position incase float vs int was causing issues
     c_code += "struct command {\n"
     c_code += "    float time;\n"
     c_code += "    uint8_t action;\n"
@@ -497,13 +534,10 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
     c_code += "struct command schedule[] = {\n"
     for cmd in commands:
         if cmd['action'] == 'MOVE':
-            # Motor move: Fill position_mm, leave mask as 0
             c_code += f"    {{{cmd['time']:.3f}f, MOVE, {cmd['data']:.3f}f, 0}},\n"
         elif cmd['action'] == 'SOLENOID_ON':
-            # Solenoid ON: Leave position as 0.0f, fill solenoid_mask
             c_code += f"    {{{cmd['time']:.3f}f, SOLENOID_ON, 0.0f, {cmd['data']}}},\n"
         elif cmd['action'] == 'SOLENOID_OFF':
-            # Solenoid OFF: Leave position as 0.0f, fill solenoid_mask
             c_code += f"    {{{cmd['time']:.3f}f, SOLENOID_OFF, 0.0f, {cmd['data']}}},\n"
     c_code += "};\n\n"
     
