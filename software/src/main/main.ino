@@ -131,6 +131,8 @@ void setup() {
     pinMode(PROX_SENSE1, INPUT); // Proximity sensor1
     pinMode(PROX_SENSE2, INPUT); // Proximity sensor2
 
+    pinMode(BUTTON_2_PIN, INPUT);
+
     // Count positive and negative edges encoder to achieve max 64CPR resolution
 
     // BUG: An interrupt source is handeled by one ISR. Calling again to ENCA_pin
@@ -256,13 +258,12 @@ void loop() {
     static double   pid_within_error_time;
     static double   wait_duration_sec;
     static int      pid_error_settle_first_time_entry = 1;
+
     static int      PID_move_size_mm;
     static int      PID_prev_setpoint_mm;
     static int      rh_disabled_due_to_timeout = 0;
+    static int      button_2_val = -1;
 
-    // --- Dither Statics ---
-    static double dither_val = 0.0;
-    static double dither_dir = 1.0;
 
     static double song_start_time = 0; // time when song starts, used to track elapsed time for command scheduling
     static double song_start = 0;
@@ -294,14 +295,21 @@ void loop() {
             for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
                 set_note_state(i, LOW);
             }
+
+            //Intialize PID
             PIDController_Init(&PID);
 
             sprintf(LCD_BUFFER, "IDLE");
             LCD_Log(LCD_BUFFER, 1);
-            delay(500);
+            delay(100);
 
             pwm_dc = 0;
-            state = HOME;
+            button_2_val = digitalRead(BUTTON_2_PIN);
+
+            if (button_2_val == LOW) {
+                state = HOME;
+                delay(500);
+            }
 
             break;
         case(HOME):
@@ -334,9 +342,9 @@ void loop() {
             // sprintf(LCD_BUFFER, "HOME, dc=%0d", pwm_dc);
             sprintf(LCD_BUFFER, "HOME, dc=30");
             LCD_Log(LCD_BUFFER, 1);
-            // sprintf(LCD_BUFFER, "rad=%0.2f, v=%0.2f", measured_rad, speed_cmps);
-            // LCD_Log(LCD_BUFFER, 2);
-            
+
+
+            //Trying to detect when we hit home       
             if (digitalRead(PROX_SENSE1) == 0) {
                 state = RUN_INIT;
                 pulseCount = 0; // Once we are finished homing set this position as 0
@@ -553,6 +561,8 @@ void loop() {
                 set_note_state(i, LOW);
             }
 
+
+            state = IDLE;
             break;
         case(ERROR):
             set_left_PWM(0);

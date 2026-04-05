@@ -6,6 +6,10 @@
 #define PWM1_pin  8
 #define PWM2_pin  7
 
+#define BUTTON_1_PIN 18 // Pin S1 (SCK)
+#define BUTTON_2_PIN 19 // Pin S2 (MOSI)
+#define BUTTON_3_PIN 20 // Pin S3 (MISO)
+
 #define PROX_SENSE1 28
 #define PROX_SENSE2 29
 #define LCD_RS 0 // TX
