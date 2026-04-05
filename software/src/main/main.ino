@@ -33,9 +33,9 @@
 #define K0 0.6// 0.6 works good
 
 // Small movement PID values
-#define PID_S_KP (0.0567 * K0 ) * 0.095// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
-#define PID_S_KI (0.00067091 * K0 ) * 1//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
-#define PID_S_KD (0.0011 * K0 )*0.01*0.25*0.855 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
+#define PID_S_KP (0.0567 * K0 ) * 0.096// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
+#define PID_S_KI (0.00067091 * K0 ) * 1.2//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
+#define PID_S_KD (0.0011 * K0 )*0.01*0.25*0.75 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
 
 // large movement PID values
 #define PID_L_KP (0.0567 * K0) * 0.128 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
@@ -249,10 +249,11 @@ void loop() {
     static double wanted_rad;
     static unsigned long prev_pid_time = 0;
     static double stiction_coeff;
-    static unsigned long rh_wait_start_time = 0;
+    static double rh_wait_start_time = 0;
     static int is_waiting_for_rh = 0;
 
     static double   pid_within_error_time;
+    static double wait_duration_sec;
     static int      pid_error_settle_first_time_entry = 1;
     static int      PID_move_size_mm;
     static int      PID_prev_setpoint_mm;
@@ -434,15 +435,18 @@ void loop() {
                         
                         if (motor_is_awake) {
                             if (is_waiting_for_rh == 0) {
-                                rh_wait_start_time = millis();
+                                rh_wait_start_time = millis()/1000.0;
                                 is_waiting_for_rh = 1;
                             }
                             safe_to_fire = 0; 
                         } 
                         else {
                             if (is_waiting_for_rh == 1) {
-                                double wait_duration_sec = (millis() - rh_wait_start_time) / 1000.0;
-                                offset += wait_duration_sec; 
+                                // wait_duration_sec = millis()/1000.0 - rh_wait_start_time;
+                                // offset += wait_duration_sec; 
+                                double current_real_time = (millis() / 1000.0) - song_start_time;
+                                offset = current_real_time - action_start_time;
+
                                 is_waiting_for_rh = 0;
                             }
                         }
