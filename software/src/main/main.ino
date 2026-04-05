@@ -33,9 +33,9 @@
 #define K0 0.6// 0.6 works good
 
 // Small movement PID values
-#define PID_S_KP (0.0567 * K0 ) * 0.096// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
-#define PID_S_KI (0.00067091 * K0 ) * 1.2//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
-#define PID_S_KD (0.0011 * K0 )*0.01*0.25*0.75 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
+#define PID_S_KP (0.0567 * K0 ) * 0.042// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
+#define PID_S_KI (0.00067091 * K0 ) * 0.5//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
+#define PID_S_KD (0.0011 * K0 )*0.01*0.25*0.4 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
 
 // large movement PID values
 #define PID_L_KP (0.0567 * K0) * 0.128 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
@@ -71,6 +71,7 @@
 
 // PID error debounce parameters
 #define PID_ERROR_SETTLE_MS 50
+#define TIMEOUT 10000
 
 #define FINGERS_IN_EXISTENCE 20
 
@@ -253,10 +254,11 @@ void loop() {
     static int is_waiting_for_rh = 0;
 
     static double   pid_within_error_time;
-    static double wait_duration_sec;
+    static double   wait_duration_sec;
     static int      pid_error_settle_first_time_entry = 1;
     static int      PID_move_size_mm;
     static int      PID_prev_setpoint_mm;
+    static int      rh_disabled_due_to_timeout = 0;
 
     // --- Dither Statics ---
     static double dither_val = 0.0;
@@ -271,6 +273,7 @@ void loop() {
     static double PID_settle_time;
     static double worst_PID_settle_time = 0;
     static double song_play_time = 0;
+    static double move_start_time = 0;
 
     static int action_type;  // TODO: Make this an enum
     static int command_idx = 0;
@@ -411,6 +414,7 @@ void loop() {
                 if (action_type == MOVE){
                 //Make sure we turn off solenoids before moving on RH
                     motor_is_awake = 1;
+                    move_start_time = millis();
                     for (int i = 12; i < FINGERS_IN_EXISTENCE; i ++){
                         set_note_state(i, LOW);
                     }
@@ -430,6 +434,11 @@ void loop() {
                 else if (action_type == SOLENOID_ON){
                     uint32_t mask = schedule[command_idx].solenoid_mask;
                     int safe_to_fire = 1; 
+
+
+                    if(rh_disabled_due_to_timeout){
+                        mask &= 0x0FFF; 
+                    }
 
                     if (mask >= 4096) {
                         
@@ -475,44 +484,54 @@ void loop() {
                     command_idx++;
                 }
             }
-            if(millis() - prev_pid_time >= PID_CONTROL_INTERVAL*1e3 && motor_is_awake){
-                prev_pid_time = millis();
 
-                prev_measured_rad = measured_rad;
-                measured_rad = pulseCount * RAD_PER_PULSE;
+            if (motor_is_awake){
+                if(millis() - move_start_time >= TIMEOUT){
+                    motor_is_awake = 0;
+                    set_PWM(0);
+                    rh_disabled_due_to_timeout = 1;
 
-                pid_output = PIDController_Update(&PID, wanted_rad, measured_rad);
-
-                if (real_abs(PID.error) < ANGLE_ERR_THRS) {
-                    if (pid_error_settle_first_time_entry) {
-                        pid_within_error_time = millis();
-                        pid_error_settle_first_time_entry = 0;
-                    }
-
-                    if (millis() - pid_within_error_time >= PID_ERROR_SETTLE_MS) {
-                        PID_prev_setpoint_mm = wanted_rad *1000.0 / KTJ;
-
-                        set_PWM(0); 
-                        motor_is_awake = 0;
-  
-                    }
                 }
-                else if (real_abs(PID.error) >= ANGLE_ERR_THRS) {
-                    
-                    if (measured_rad*KJT*1000 >= 240 && prev_measured_rad == measured_rad){
-                        stiction_coeff = PID_STICTION_SIDES + 0.1;
-                    }
-                    else if (prev_measured_rad == measured_rad){
-                        stiction_coeff = PID_STICTION_MIDDLE;
-                    }
-                    else stiction_coeff = 0;
+                if(millis() - prev_pid_time >= PID_CONTROL_INTERVAL*1e3){
+                    prev_pid_time = millis();
 
-                    if (PID.error > 0) set_PWM(-(pid_output + stiction_coeff));
-                    else set_PWM(-(pid_output - stiction_coeff));
-                    
-                    pid_error_settle_first_time_entry = 1;
-                    pid_within_error_time = millis();
+                    prev_measured_rad = measured_rad;
+                    measured_rad = pulseCount * RAD_PER_PULSE;
 
+                    pid_output = PIDController_Update(&PID, wanted_rad, measured_rad);
+
+                    if (real_abs(PID.error) < ANGLE_ERR_THRS) {
+                        if (pid_error_settle_first_time_entry) {
+                            pid_within_error_time = millis();
+                            pid_error_settle_first_time_entry = 0;
+                        }
+
+                        if (millis() - pid_within_error_time >= PID_ERROR_SETTLE_MS) {
+                            PID_prev_setpoint_mm = wanted_rad *1000.0 / KTJ;
+
+                            set_PWM(0); 
+                            motor_is_awake = 0;
+                            rh_disabled_due_to_timeout = 0;
+    
+                        }
+                    }
+                    else if (real_abs(PID.error) >= ANGLE_ERR_THRS) {
+                        
+                        if (measured_rad*KJT*1000 >= 240 && prev_measured_rad == measured_rad){
+                            stiction_coeff = PID_STICTION_SIDES + 0.1;
+                        }
+                        else if (prev_measured_rad == measured_rad){
+                            stiction_coeff = PID_STICTION_MIDDLE;
+                        }
+                        else stiction_coeff = 0;
+
+                        if (PID.error > 0) set_PWM(-(pid_output + stiction_coeff));
+                        else set_PWM(-(pid_output - stiction_coeff));
+                        
+                        pid_error_settle_first_time_entry = 1;
+                        pid_within_error_time = millis();
+
+                    }
                 }
             }
             break;
