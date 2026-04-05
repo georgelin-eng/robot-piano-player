@@ -20,7 +20,7 @@
 #define KJT 0.00097000000000000005055  // joint-to-task space: 1:10 gearbox + 17.4mm diameter pulley 
 #define KTJ 1030.9278350515462535      // task-to-joint space
 
-#define POS_ERR_THRS (7/1000.0) //   (10 /1000.0)
+#define POS_ERR_THRS (6/1000.0) //   (10 /1000.0)
 #define ANGLE_ERR_THRS (POS_ERR_THRS * KTJ)
 
 #define PWM_FREQ 20000 // 20KHz
@@ -33,14 +33,14 @@
 #define K0 0.6// 0.6 works good
 
 // Small movement PID values
-#define PID_S_KP (0.0567 * K0 ) * 0.042// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
+#define PID_S_KP (0.0567 * K0 ) * 0.044// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
 #define PID_S_KI (0.00067091 * K0 ) * 0.5//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
 #define PID_S_KD (0.0011 * K0 )*0.01*0.25*0.4 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
 
 // large movement PID values
-#define PID_L_KP (0.0567 * K0) * 0.128 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
+#define PID_L_KP (0.0567 * K0) * 0.129 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
 #define PID_L_KI (0.00067091 * K0 ) * 470// (0.00067091 * K0 * 200) *0.000005  // * 1.45
-#define PID_L_KD (0.0011 * K0)*0.01*0.28 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012 
+#define PID_L_KD (0.0011 * K0)*0.01*0.2 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012 
 
 #define PID_MIN_MOVE 30 // mm
 #define PID_MAX_MOVE 80 // mm
@@ -71,7 +71,7 @@
 
 // PID error debounce parameters
 #define PID_ERROR_SETTLE_MS 50
-#define TIMEOUT 10000
+#define TIMEOUT 2000
 
 #define FINGERS_IN_EXISTENCE 20
 
