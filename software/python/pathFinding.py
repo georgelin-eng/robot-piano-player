@@ -498,7 +498,10 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
         if on_mask > 0:
             commands.append({'time': t, 'action': 'SOLENOID_ON', 'data': on_mask})
 
-    c_code = "#define MOVE 0\n"
+    c_code = "#ifndef COMMANDS_H\n"
+    c_code += "#define COMMANDS_H\n\n"
+
+    c_code += "#define MOVE 0\n"
     c_code += "#define SOLENOID_ON 1\n"
     c_code += "#define SOLENOID_OFF 2\n\n"
     
@@ -887,8 +890,7 @@ def compile_cnc_schedule(midi_filepath, right_hand_config, show_error = 1):
     rh_times, rh_path_cm = find_best_time_path(right_hand_notes)
     
     if not rh_times:
-        if print:
-            print("WARNING: No valid path found! The chord might be physically impossible to span.")
+        print("WARNING: No valid path found! The chord might be physically impossible to span.")
     else:
         if show_error:
             print("Path found. Generating C code...")
@@ -912,8 +914,23 @@ def compile_cnc_schedule(midi_filepath, right_hand_config, show_error = 1):
         out_path = "robot_schedule.h"
         with open(out_path, "w") as f:
             f.write(c_code)
-            
+
+        command_path = os.path.abspath(os.path.join(target_dir, os.pardir, "src", "main", "commands.h"))
+        os.makedirs(os.path.dirname(command_path), exist_ok=True)
+        with open(command_path, "w") as f:
+            f.write(c_code)
+
+        size_in_bytes = os.path.getsize(out_path)
+        mc_max_memory = 8 * 1024 * 1024  # 8 MB
+        if size_in_bytes > mc_max_memory:
+            if show_error:
+                print(f"⚠️ WARNING: Generated C array size ({size_in_bytes} bytes) exceeds the microcontroller's memory limit ({mc_max_memory} bytes).")
+            return
+        else:
+            if show_error:
+                print(f"✅ Generated C array size: {size_in_bytes} bytes (within microcontroller limits).")
+
         if show_error:
-            print(f"✅ Successfully saved C array to '{out_path}'!")
+            print(f"✅ Successfully saved C array to '{out_path}' and '{command_path}'!")
         
         return c_code, fig

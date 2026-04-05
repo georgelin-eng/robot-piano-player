@@ -43,6 +43,10 @@ class RobotPianoGUI:
         self.notebook.add(self.tab_code, text=" C-Code Schedule ")
         self.notebook.add(self.tab_left_hand, text=" Left Hand Keys ")
         
+        # Status tracking for selected song
+        self.optimized = False
+        self.c_code_generated = False
+        
         self.setup_main_tab()
         self.setup_code_tab()
         self.setup_left_hand_tab()
@@ -54,48 +58,77 @@ class RobotPianoGUI:
         self.header_canvas = None # Holds the header matplotlib widget
 
     def setup_main_tab(self):
+        self.panel_width = 500
+        self.song_panel_height = 180
+        self.sol_panel_height = 220
+
         # --- 1. SONG SELECTION ---
-        frame_file = tk.LabelFrame(self.tab_main, text="1. Select Song (MIDI)", padx=10, pady=10)
-        frame_file.pack(fill="x", padx=10, pady=5)
-        
-        # Folder selection
+        self.song_frame = tk.Frame(self.tab_main)
+        self.song_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+        frame_songsel = tk.LabelFrame(self.song_frame, text="Select Midi File", padx=10, pady=10)
+        frame_songsel.pack(side="left", fill="both", expand=True, padx=(0, 5), pady=0)
+        frame_songsel.config(width=600, height=self.song_panel_height)
+
         self.folder_var = tk.StringVar()
-        folder_frame = tk.Frame(frame_file)
+        folder_frame = tk.Frame(frame_songsel)
         folder_frame.pack(fill="x", pady=(0, 5))
-        tk.Label(folder_frame, text="Folder:    ").pack(side="left")
+        tk.Label(folder_frame, text="   Folder:    ").pack(side="left")
         tk.Entry(folder_frame, textvariable=self.folder_var, width=60, state='readonly').pack(side="left", padx=(5, 0))
         tk.Button(folder_frame, text="Browse Folder...", command=self.browse_folder).pack(side="left", padx=(5, 0))
-        
-        # MIDI file selection
-        midi_frame = tk.Frame(frame_file)
-        midi_frame.pack(fill="x")
-        tk.Label(midi_frame, text="MIDI File:").pack(side="left")
+
+        midi_frame = tk.Frame(frame_songsel, padx=10, pady=5)
+        midi_frame.pack(fill="both", expand=True)
+
+        tk.Label(midi_frame, text="MIDI Files Available", font=("Arial", 10, "bold")).pack(anchor="w")
         self.file_var = tk.StringVar()
-        self.midi_listbox = tk.Listbox(midi_frame, height=6, width=60, selectmode=tk.SINGLE)
-        self.midi_listbox.pack(side="left", padx=(5, 0))
+        self.midi_listbox = tk.Listbox(midi_frame, height=6, width=120, selectmode=tk.SINGLE)
+        self.midi_listbox.pack(side="left", padx=(0, 5), pady=(5, 0), fill="y")
         self.midi_listbox.bind('<<ListboxSelect>>', self.on_midi_select)
-        
-        # Scrollbar for listbox
+
         scrollbar = tk.Scrollbar(midi_frame)
-        scrollbar.pack(side="right", fill="y")
+        scrollbar.pack(side="left", fill="y", pady=(5, 0))
         self.midi_listbox.config(yscrollcommand=scrollbar.set)
         scrollbar.config(command=self.midi_listbox.yview)
+
+        frame_currsong = tk.LabelFrame(self.song_frame, text="Song Status", padx=10, pady=10)
+        frame_currsong.pack(side="right", fill="y", padx=(5, 0), pady=0)
+        frame_currsong.config(width=self.panel_width, height=self.song_panel_height)
+        frame_currsong.pack_propagate(False)
+
+        # Selected song display
+        self.selected_song_frame = tk.Frame(frame_currsong, padx=10, pady=10)
+        self.selected_song_frame.pack(side="right", fill="y", padx=(5, 0), pady=(0, 0))
+        self.selected_song_frame.config(width=self.panel_width, height=160)
+        self.selected_song_frame.pack_propagate(False)
+
+        # Song title/status
+        self.selected_song_var = tk.StringVar(value="Song: None")
+        self.selected_song_label = tk.Label(self.selected_song_frame, textvariable=self.selected_song_var, font=("Arial", 15))
+        self.selected_song_label.pack(anchor="nw", pady=(10, 0))
+
+        # Status indicators
+        self.optimized_var = tk.StringVar(value="Optimized: No")
+        self.optimized_label = tk.Label(self.selected_song_frame, textvariable=self.optimized_var, font=("Arial", 15), fg="red")
+        self.optimized_label.pack(anchor="nw", pady=(10, 0))
+
+        self.c_code_var = tk.StringVar(value="C-Code Generated: No")
+        self.c_code_label = tk.Label(self.selected_song_frame, textvariable=self.c_code_var, font=("Arial", 15), fg="red")
+        self.c_code_label.pack(anchor="nw", pady=(10, 0))
+
 
         # --- 2. SOLENOID CONFIGURATION ---
         self.config_frame = tk.Frame(self.tab_main)
         self.config_frame.pack(fill="both", expand=True, padx=10, pady=5)
 
-        # Fixed width for optimize panel
-        self.optimize_panel_width = 500
-        self.minimum_panel_height = 250
 
         # Maximum solenoids setting
         self.max_solenoids = tk.IntVar(value=5)
 
         # Left side: Manual solenoid loadout
-        frame_config = tk.LabelFrame(self.config_frame, text=f"2a. Right Hand Solenoid Loadout (Max {self.max_solenoids.get()})", padx=10, pady=10)
+        frame_config = tk.LabelFrame(self.config_frame, text=f"Select Right Hand Solenoid Layout (Max {self.max_solenoids.get()})", padx=10, pady=10)
         frame_config.pack(side="left", fill="both", expand=True, padx=(0, 5), pady=(0,0))
-        frame_config.config(width=600, height=self.minimum_panel_height)
+        frame_config.config(width=600, height=self.sol_panel_height)
         frame_config.pack_propagate(False)
 
         # Max solenoids control
@@ -110,16 +143,16 @@ class RobotPianoGUI:
         self.update_max_solenoids()
 
         # Right side: Optimization section
-        frame_optimize = tk.LabelFrame(self.config_frame, text="2b. Optimize Solenoid Configuration", padx=10, pady=10)
+        frame_optimize = tk.LabelFrame(self.config_frame, text="Optimize Solenoid Configuration", padx=10, pady=10)
         frame_optimize.pack(side="right", fill="y", padx=(5, 0), pady=(0,0))
-        frame_optimize.config(width=self.optimize_panel_width, height=self.minimum_panel_height)
+        frame_optimize.config(width=self.panel_width, height=self.sol_panel_height)
         frame_optimize.pack_propagate(False)
 
         # Keep panel widths and heights stable when the window resizes
         def on_config_frame_resize(event):
-            target_left_width = max(event.width - self.optimize_panel_width - 10, 300)
-            frame_config.config(width=target_left_width, height=max(event.height - 20, self.minimum_panel_height))
-            frame_optimize.config(width=self.optimize_panel_width, height=max(event.height - 20, self.minimum_panel_height))
+            target_left_width = max(event.width - self.panel_width - 10, 300)
+            frame_config.config(width=target_left_width, height=max(event.height - 20, self.sol_panel_height))
+            frame_optimize.config(width=self.panel_width, height=max(event.height - 20, self.sol_panel_height))
 
         self.config_frame.bind("<Configure>", on_config_frame_resize)
 
@@ -328,6 +361,11 @@ class RobotPianoGUI:
                 result_text = f"Optimal Configuration:\n{', '.join(config_names)}\n\nCode length: {best_score} chars"
                 self.optimize_result_label.config(text=result_text)
                 
+                # Update status
+                self.optimized = True
+                self.optimized_var.set("Optimized: Yes")
+                self.optimized_label.config(fg="green")
+                
                 print(f"✅ Optimization complete!")
                 print(f"Best configuration: {best_config}")
                 print(f"Configuration names: {config_names}")
@@ -497,6 +535,21 @@ class RobotPianoGUI:
                 if hasattr(self, 'draw_piano_keys'):
                     self.draw_piano_keys()
                 print(f"⚠️ Deactivated {deactivated} solenoid(s) to respect new maximum of {max_count}")
+
+    def reset_optimization_section(self):
+        """Reset the optimization panel when the song selection changes."""
+        if hasattr(self, 'optimize_result_label'):
+            self.optimize_result_label.config(text="Click button to find\noptimal configuration")
+        if hasattr(self, 'optimize_progress'):
+            self.optimize_progress.config(text="")
+        
+        # Reset status indicators
+        self.optimized = False
+        self.c_code_generated = False
+        self.optimized_var.set("Optimized: No")
+        self.optimized_label.config(fg="red")
+        self.c_code_var.set("C-Code Generated: No")
+        self.c_code_label.config(fg="red")
 
     def on_piano_key_click(self, event):
         """Handle piano key clicks. Check black keys first for priority."""
@@ -703,8 +756,11 @@ class RobotPianoGUI:
         if selection:
             index = selection[0]
             if index < len(self.midi_files):
-                self.file_var.set(self.midi_files[index])
-                print(f"Selected MIDI file: {self.midi_files[index]}")
+                selected_path = self.midi_files[index]
+                self.file_var.set(selected_path)
+                self.selected_song_var.set(f"Song: {os.path.basename(selected_path)}")
+                self.reset_optimization_section()
+                print(f"Selected MIDI file: {selected_path}")
 
     def check_right_hand_accessibility(self, midi_path, active_fingers):
         """Return right-hand inaccesssible notes for active solenoid fingers."""
@@ -771,6 +827,11 @@ class RobotPianoGUI:
             self.text_code.delete("1.0", tk.END)
             self.text_code.insert(tk.END, c_code)
             
+            # Update status
+            self.c_code_generated = True
+            self.c_code_var.set("C-Code Generated: Yes")
+            self.c_code_label.config(fg="green")
+            
             # --- UPDATE PLOT TAB ---
             # Remove the old plot if it exists
             if self.current_canvas:
@@ -820,6 +881,8 @@ class RobotPianoGUI:
                 left_hand_notes = [n for n in notes if n.pitch <= pathFinding.LH_MAX_PITCH]
                 left_pitches = [note.pitch for note in left_hand_notes]
                 
+                # print(f"Left hand pitches: {left_pitches}")
+
                 # Count frequency of each pitch
                 pitch_counts = {}
                 for pitch in left_pitches:
@@ -828,9 +891,11 @@ class RobotPianoGUI:
                 # Determine which keys are used based on the LEFT_FINGERS mapping
                 self.left_hand_keys = {}
                 for pitch, count in pitch_counts.items():
-                    if pitch - 12 in pathFinding.LEFT_FINGERS:
-                        finger_id = pathFinding.LEFT_FINGERS[pitch - 12]
+                    if pitch in pathFinding.LEFT_FINGERS:
+                        finger_id = pathFinding.LEFT_FINGERS[pitch]
                         self.left_hand_keys[finger_id] = count
+                
+                # print(f"Left hand fingers: {pathFinding.LEFT_FINGERS}")
 
                 # Draw the left hand piano
                 self.draw_left_hand_piano()
@@ -846,6 +911,10 @@ class RobotPianoGUI:
             
         except Exception as e:
             print(f"\n[!] COMPILER CRASHED: {e}\n")
+            # Reset C-code status on failure
+            self.c_code_generated = False
+            self.c_code_var.set("C-Code Generated: No")
+            self.c_code_label.config(fg="red")
 
 if __name__ == "__main__":
     root = tk.Tk()
