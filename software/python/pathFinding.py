@@ -524,7 +524,9 @@ def generate_c_command_array(left_notes, right_notes, right_times, right_path_cm
             c_code += f"    {{{cmd['time']:.3f}f, SOLENOID_OFF, 0.0f, {cmd['data']}}},\n"
     c_code += "};\n\n"
     
-    c_code += f"const int SCHEDULE_LENGTH = {len(commands)};\n"
+    c_code += f"const int SCHEDULE_LENGTH = {len(commands)};\n\n"
+
+    c_code += "#endif \n"
     
     return c_code
 
