@@ -358,7 +358,7 @@ class RobotPianoGUI:
                 
                 # Display results
                 config_names = [next(f['name'] for f in self.ALL_FINGERS if f['id'] == fid) for fid in best_config]
-                result_text = f"Optimal Configuration:\n{', '.join(config_names)}\n\nCode length: {best_score} chars"
+                result_text = f"Optimal Configuration:\n{', '.join(config_names)}\n\nDistance Travelled: {round(best_score, 2)} cm"
                 self.optimize_result_label.config(text=result_text)
                 
                 # Update status
