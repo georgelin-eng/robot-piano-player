@@ -342,8 +342,9 @@ class RobotPianoGUI:
                     
                     # Score based on code length (shorter = more efficient)
                     score = len(c_code)
+                    print(f"Configuration {combo} -> Code length: {score} characters")
                     
-                    if score < best_score:
+                    if score <= best_score:
                         best_score = score
                         best_config = combo
                         
