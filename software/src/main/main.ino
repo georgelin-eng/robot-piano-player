@@ -33,14 +33,14 @@
 #define K0 0.6// 0.6 works good
 
 // Small movement PID values
-#define PID_S_KP (0.0567 * K0 ) * 0.044// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
-#define PID_S_KI (0.00067091 * K0 ) * 0.5//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
-#define PID_S_KD (0.0011 * K0 )*0.01*0.25*0.4 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
+#define PID_S_KP (0.0567 * K0 ) * 0.096// (0.0567 * K0 * 0.174) * 1.49999// * 0.138
+#define PID_S_KI (0.00067091 * K0 ) * 1.2//(0.00067091 * K0 * 260) *0.00000021 // * 1.45
+#define PID_S_KD (0.0011 * K0 )*0.01*0.25*5 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012
 
 // large movement PID values
-#define PID_L_KP (0.0567 * K0) * 0.129 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
+#define PID_L_KP (0.0567 * K0) * 0.128 // (0.0567 * K0 * 0.3) * 1.6 // * 0.138
 #define PID_L_KI (0.00067091 * K0 ) * 470// (0.00067091 * K0 * 200) *0.000005  // * 1.45
-#define PID_L_KD (0.0011 * K0)*0.01*0.2 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012 
+#define PID_L_KD (0.0011 * K0)*0.01*0.5 //0.00000000087//(0.0011 * K0 * 0.00135)* 0//* 0.012 
 
 #define PID_MIN_MOVE 30 // mm
 #define PID_MAX_MOVE 80 // mm
@@ -290,7 +290,7 @@ void loop() {
     // --------- FSM BEGIN ---------
     switch(state) {
         case(IDLE):
-
+            song_start = 0;
             //Turn off all solenoids
             for (int i = 0; i < FINGERS_IN_EXISTENCE; i ++){
                 set_note_state(i, LOW);

@@ -13,7 +13,7 @@ import math
 from calibrationmap import ABSOLUTE_KEY_MAP_CM
 
 
-HIT_TOLERANCE_CM = 0
+HIT_TOLERANCE_CM = 0.8
 
 WHITE_KEY_WIDTH_CM=2.28
 
@@ -85,8 +85,7 @@ def get_travel_time(dist_cm):
     acc_penalty = 0.01
     max_velocity = 60.0  # cm/s
   #  acceleration_penalty = 0.05 # time to accelerate maybe make this into a function ? Just hardcoding a time penalty for time being
-    #return (dist_cm / max_velocity) + acc_penalty
-    return  acc_penalty
+    return (dist_cm / max_velocity) + acc_penalty
 
 
 """ 
@@ -276,9 +275,10 @@ def find_best_time_path(notes):
                 #How many seconds late are we - >
                 lateness = max(0.0, required_time- available_time)
                 
-                punishement_cost = lateness*10
+                punishement_cost = 0 #lateness*10
+                move_penalty = 5.0 if curr_pos != prev_pos else 0.0
                 
-                step_error= lost_sustain_cost + punishement_cost
+                step_error= lost_sustain_cost + punishement_cost + move_penalty
                 total_new_error = prev_acc_error + step_error
                 
                 #Find lowest time error way to end up in position x (cm)
