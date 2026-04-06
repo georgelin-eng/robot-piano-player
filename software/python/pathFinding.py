@@ -13,7 +13,7 @@ import math
 from calibrationmap import ABSOLUTE_KEY_MAP_CM
 
 
-HIT_TOLERANCE_CM = 0.8
+HIT_TOLERANCE_CM = 0.3
 
 WHITE_KEY_WIDTH_CM=2.28
 
@@ -166,6 +166,30 @@ def get_travel_time(dist_cm):
   #  acceleration_penalty = 0.05 # time to accelerate maybe make this into a function ? Just hardcoding a time penalty for time being
     return (dist_cm / max_velocity) + acc_penalty
 
+def can_play_chord(h, chord_data):
+    max_finger_offset = max([f['offset'] for f in ROBOT_FINGERS])
+    
+    #check if the hand is physically out of bounds
+    if (h + max_finger_offset > get_note_position_cm(RH_MIN_PITCH) + 0.5 or h < -0.5):
+        return False
+        
+    for note_pos, note_is_black in chord_data:
+        note_hit = False
+        for finger in ROBOT_FINGERS:
+            finger_is_black = (finger['type'] == 'b')
+            if note_is_black != finger_is_black:
+                continue 
+            
+            finger_loc = h + finger['offset']
+            # Using HIT_TOLERANCE_CM here
+            if abs(note_pos - finger_loc) <= (HIT_TOLERANCE_CM + 0.01):
+                note_hit = True
+                break 
+                
+        if not note_hit:
+            return False 
+            
+    return True
 
 """ 
 Finds all hand positions where the robot can play all the notes in the timestamp.
@@ -333,6 +357,12 @@ def find_best_time_path(notes):
             layers.append(prev_layer)
             path_traceback.append({k:k for k in prev_layer})
             continue
+        
+        for prev_pos in prev_layer.keys():
+            # If that position can play the current chord, add it as a candidate for the current layer even if we didnt get to it from the optimal path
+            if prev_pos not in candidates:
+                if can_play_chord(prev_pos, current_chord):
+                    candidates.append(prev_pos)
 
         # Check transitions every possible way to play the next note from every starting position and minimize time error.
         for curr_pos in candidates:
@@ -357,7 +387,7 @@ def find_best_time_path(notes):
                 punishement_cost = 0 #lateness*10
                 move_penalty = 5.0 if curr_pos != prev_pos else 0.0
                 
-                step_error= lost_sustain_cost + punishement_cost + move_penalty
+                step_error=  move_penalty
                 total_new_error = prev_acc_error + step_error
                 
                 #Find lowest time error way to end up in position x (cm)
