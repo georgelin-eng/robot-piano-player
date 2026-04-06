@@ -337,11 +337,11 @@ class RobotPianoGUI:
                     # Run pathfinding for this configuration
                     # Save current working directory since compile_cnc_schedule changes it
                     original_cwd = os.getcwd()
-                    c_code, _ = compile_cnc_schedule(midi_path, active_config, 0)
+                    _, _, dist = compile_cnc_schedule(midi_path, active_config, 0)
                     os.chdir(original_cwd)  # Restore working directory
-                    
-                    # Score based on code length (shorter = more efficient)
-                    score = len(c_code)
+
+                    # Score based on total travel distance (lower is better)
+                    score = dist
                     
                     if score < best_score:
                         best_score = score
@@ -821,7 +821,7 @@ class RobotPianoGUI:
         
         try:
             # Call the backend wrapper (which now returns the code and the figure)
-            c_code, fig = compile_cnc_schedule(midi_path, active_config, 1)
+            c_code, fig, _ = compile_cnc_schedule(midi_path, active_config, 1)
             
             # --- UPDATE CODE TAB ---
             self.text_code.delete("1.0", tk.END)
