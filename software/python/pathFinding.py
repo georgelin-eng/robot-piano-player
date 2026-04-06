@@ -13,7 +13,7 @@ import math
 from calibrationmap import ABSOLUTE_KEY_MAP_CM
 
 
-HIT_TOLERANCE_CM = 0.3
+HIT_TOLERANCE_CM = 0.1
 
 WHITE_KEY_WIDTH_CM=2.28
 
@@ -358,11 +358,11 @@ def find_best_time_path(notes):
             path_traceback.append({k:k for k in prev_layer})
             continue
         
-        for prev_pos in prev_layer.keys():
-            # If that position can play the current chord, add it as a candidate for the current layer even if we didnt get to it from the optimal path
-            if prev_pos not in candidates:
-                if can_play_chord(prev_pos, current_chord):
-                    candidates.append(prev_pos)
+        # for prev_pos in prev_layer.keys():
+        #     # If that position can play the current chord, add it as a candidate for the current layer even if we didnt get to it from the optimal path
+        #     if prev_pos not in candidates:
+        #         if can_play_chord(prev_pos, current_chord):
+        #             candidates.append(prev_pos)
 
         # Check transitions every possible way to play the next note from every starting position and minimize time error.
         for curr_pos in candidates:
@@ -385,7 +385,7 @@ def find_best_time_path(notes):
                 lateness = max(0.0, required_time- available_time)
                 
                 punishement_cost = 0 #lateness*10
-                move_penalty = 5.0 if curr_pos != prev_pos else 0.0
+                move_penalty = 5.0 if abs(curr_pos-prev_pos) >= 0.5 else 0.0
                 
                 step_error=  move_penalty
                 total_new_error = prev_acc_error + step_error
