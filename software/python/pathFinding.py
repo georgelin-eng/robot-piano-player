@@ -85,7 +85,8 @@ def get_travel_time(dist_cm):
     acc_penalty = 0.01
     max_velocity = 60.0  # cm/s
   #  acceleration_penalty = 0.05 # time to accelerate maybe make this into a function ? Just hardcoding a time penalty for time being
-    return (dist_cm / max_velocity) + acc_penalty
+    #return (dist_cm / max_velocity) + acc_penalty
+    return  acc_penalty
 
 
 """ 
