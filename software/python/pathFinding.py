@@ -161,7 +161,7 @@ Add-ons
 def get_travel_time(dist_cm):
 
     if dist_cm == 0: return 0.0
-    acc_penalty = 0.01
+    acc_penalty = 0.05
     max_velocity = 60.0  # cm/s
   #  acceleration_penalty = 0.05 # time to accelerate maybe make this into a function ? Just hardcoding a time penalty for time being
     return (dist_cm / max_velocity) + acc_penalty
@@ -387,7 +387,7 @@ def find_best_time_path(notes):
                 punishement_cost = 0 #lateness*10
                 move_penalty = 5.0 if abs(curr_pos-prev_pos) >= 0.5 else 0.0
                 
-                step_error=  move_penalty
+                step_error=  move_penalty + required_time
                 total_new_error = prev_acc_error + step_error
                 
                 #Find lowest time error way to end up in position x (cm)
