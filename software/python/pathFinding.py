@@ -161,10 +161,13 @@ Add-ons
 def get_travel_time(dist_cm):
 
     if dist_cm == 0: return 0.0
-    acc_penalty = 0.05
-    max_velocity = 60.0  # cm/s
-  #  acceleration_penalty = 0.05 # time to accelerate maybe make this into a function ? Just hardcoding a time penalty for time being
-    return (dist_cm / max_velocity) + acc_penalty
+    if dist_cm > 0.5:
+        acc_penalty = 0.05
+        max_velocity = 60.0  # cm/s
+        #  acceleration_penalty = 0.05 # time to accelerate maybe make this into a function ? Just hardcoding a time penalty for time being
+        return (dist_cm / max_velocity) + acc_penalty
+    else:
+        return 0.0
 
 def can_play_chord(h, chord_data):
     max_finger_offset = max([f['offset'] for f in ROBOT_FINGERS])
