@@ -1047,5 +1047,11 @@ def compile_cnc_schedule(midi_filepath, right_hand_config, show_error = 1):
 
         if show_error:
             print(f"✅ Successfully saved C array to '{out_path}' and '{command_path}'!")
+
+
+        distance = sum(abs(rh_path_cm[i+1] - rh_path_cm[i]) for i in range(len(rh_path_cm)-1))
         
-        return c_code, fig
+        if show_error:
+            print(f"Total right hand travel distance: {distance:.2f} cm")
+        
+        return c_code, fig, distance
