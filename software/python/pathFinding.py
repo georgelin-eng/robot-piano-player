@@ -71,6 +71,85 @@ def get_note_position_cm(midi_pitch):
     """
     return ABSOLUTE_KEY_MAP_CM.get(midi_pitch, 0.0)
 
+
+APPROX_KEY_MAP_CM = {
+    24: 86.640,
+    25: 85.500,
+    26: 84.360,
+    27: 83.220,
+    28: 82.080,
+    29: 79.800,
+    30: 78.660,
+    31: 77.520,
+    32: 76.380,
+    33: 75.240,
+    34: 74.100,
+    35: 72.960,
+    36: 70.680,
+    37: 69.540,
+    38: 68.400,
+    39: 67.260,
+    40: 66.120,
+    41: 63.840,
+    42: 62.700,
+    43: 61.560,
+    44: 60.420,
+    45: 59.280,
+    46: 58.140,
+    47: 57.000,
+    48: 54.720,
+    49: 53.580,
+    50: 52.440,
+    51: 51.300,
+    52: 50.160,
+    53: 47.880,
+    54: 46.740,
+    55: 45.600,
+    56: 44.460,
+    57: 43.320,
+    58: 42.180,
+    59: 41.040,
+    60: 38.760,
+    61: 37.620,
+    62: 36.480,
+    63: 35.340,
+    64: 34.200,
+    65: 31.920,
+    66: 30.780,
+    67: 29.640,
+    68: 28.500,
+    69: 27.360,
+    70: 26.220,
+    71: 25.080,
+    72: 22.800,
+    73: 21.660,
+    74: 20.520,
+    75: 19.380,
+    76: 18.240,
+    77: 15.960,
+    78: 14.820,
+    79: 13.680,
+    80: 12.540,
+    81: 11.400,
+    82: 10.260,
+    83: 9.120,
+    84: 6.840,
+    85: 5.700,
+    86: 4.560,
+    87: 3.420,
+    88: 2.280,
+    89: 0.000,
+}
+
+def get_note_position_cm_approx(midi_pitch):
+    """
+    Uses a mathematical approximation to calculate the physical robot coordinate.
+    This is a fallback in case a MIDI pitch is missing from the calibration map.
+    """
+    return APPROX_KEY_MAP_CM.get(midi_pitch, 0.0)
+
+
+
 """Basic Physics simulation to estimate time.
 dist_cm: Distance hand will need to travel to reach position
 
@@ -697,7 +776,7 @@ def plot_piano(print_plot):
     header_y = 0
     # Draw White Keys First
     for p in range(24, 78): 
-        pos = get_note_position_cm(p)
+        pos = get_note_position_cm_approx(p)
         if not is_black_key(p):
             ax.add_patch(patches.Rectangle((pos - WHITE_KEY_WIDTH_CM/2, header_y), WHITE_KEY_WIDTH_CM, PIANO_HEADER_HEIGHT, 
                                            ec='black', fc='#f0f0f0', zorder=1))
@@ -705,7 +784,7 @@ def plot_piano(print_plot):
     # Draw Black Keys Second (So they overlay)
     for p in range(24, 78):
         if is_black_key(p):
-            pos = get_note_position_cm(p)
+            pos = get_note_position_cm_approx(p)
             ax.add_patch(patches.Rectangle((pos - VISUAL_BLACK_KEY_WIDTH/2, header_y), VISUAL_BLACK_KEY_WIDTH, PIANO_HEADER_HEIGHT*0.65, 
                                            ec='black', fc='#333333', zorder=2))
     # 5. Draw Dynamic Deadzones and Hand Zones
@@ -713,8 +792,8 @@ def plot_piano(print_plot):
     # --- Middle Deadzone (The Gap Between Hands) ---
     # Because our axis is mirrored (higher cm = further left), 
     # we ADD width to get the left edge, and SUBTRACT width to get the right edge.
-    rh_left_edge = get_note_position_cm(RH_MIN_PITCH - 12) + (WHITE_KEY_WIDTH_CM / 2)
-    lh_right_edge = get_note_position_cm(LH_MAX_PITCH - 19) - (WHITE_KEY_WIDTH_CM / 2)
+    rh_left_edge = get_note_position_cm_approx(RH_MIN_PITCH - 12) + (WHITE_KEY_WIDTH_CM / 2)
+    lh_right_edge = get_note_position_cm_approx(LH_MAX_PITCH - 19) - (WHITE_KEY_WIDTH_CM / 2)
     
     ax.axvspan(lh_right_edge, rh_left_edge, color='red', alpha=0.1, hatch='//', zorder=0)
     
@@ -764,7 +843,7 @@ def plot_robot_movement(all_notes, rh_times, rh_path_cm, right_config, print_plo
     header_y = 0
     # Draw White Keys First
     for p in range(24, 78): 
-        pos = get_note_position_cm(p)
+        pos = get_note_position_cm_approx(p)
         if not is_black_key(p):
             ax.add_patch(patches.Rectangle((pos - WHITE_KEY_WIDTH_CM/2, header_y), WHITE_KEY_WIDTH_CM, 0, 
                                            ec='white', fc='#f0f0f0', zorder=0))
@@ -774,14 +853,14 @@ def plot_robot_movement(all_notes, rh_times, rh_path_cm, right_config, print_plo
     # Draw Black Keys Second (So they overlay)
     for p in range(24, 78):
         if is_black_key(p):
-            pos = get_note_position_cm(p)
+            pos = get_note_position_cm_approx(p)
             ax.add_patch(patches.Rectangle((pos - VISUAL_BLACK_KEY_WIDTH/2, header_y), VISUAL_BLACK_KEY_WIDTH, 0, 
                                            ec='white', fc='#333333', zorder=0))
 
     last_time = 0
     # 3. Draw the Song Notes (The Background "Synthesia" falling blocks)
     for n in all_notes:
-        pos = get_note_position_cm(n.pitch - 12)
+        pos = get_note_position_cm_approx(n.pitch - 12)
         black_key = is_black_key(n.pitch)
         w = VISUAL_BLACK_KEY_WIDTH if black_key else WHITE_KEY_WIDTH_CM
         
@@ -791,7 +870,7 @@ def plot_robot_movement(all_notes, rh_times, rh_path_cm, right_config, print_plo
         # Color Left Hand notes Light Blue/Dark Blue
         if n.pitch < ORIGIN_MIDI_PITCH:
             color = '#1f4e79' if black_key else '#5a9bd5'
-            pos = get_note_position_cm(n.pitch - 24)  
+            pos = get_note_position_cm_approx(n.pitch - 24)  
 
         ax.add_patch(patches.Rectangle((pos - w/2, n.start), w, max(0.05, n.end - n.start), 
                                        ec='#999', fc=color, alpha=0.5, zorder=0))
@@ -836,8 +915,8 @@ def plot_robot_movement(all_notes, rh_times, rh_path_cm, right_config, print_plo
     # --- Middle Deadzone (The Gap Between Hands) ---
     # Because our axis is mirrored (higher cm = further left), 
     # we ADD width to get the left edge, and SUBTRACT width to get the right edge.
-    rh_left_edge = get_note_position_cm(RH_MIN_PITCH - 12) + (WHITE_KEY_WIDTH_CM / 2)
-    lh_right_edge = get_note_position_cm(LH_MAX_PITCH - 19) - (WHITE_KEY_WIDTH_CM / 2)
+    rh_left_edge = get_note_position_cm_approx(RH_MIN_PITCH - 12) + (WHITE_KEY_WIDTH_CM / 2)
+    lh_right_edge = get_note_position_cm_approx(LH_MAX_PITCH - 19) - (WHITE_KEY_WIDTH_CM / 2)
     
     ax.axvspan(lh_right_edge, rh_left_edge, color='red', alpha=0.1, hatch='//', zorder=0)
 
