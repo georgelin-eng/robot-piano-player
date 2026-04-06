@@ -71,7 +71,7 @@
 
 // PID error debounce parameters
 #define PID_ERROR_SETTLE_MS 50
-#define TIMEOUT 2000
+#define TIMEOUT 5000
 
 #define FINGERS_IN_EXISTENCE 20
 
@@ -406,7 +406,7 @@ void loop() {
             action_type       = schedule[command_idx].action;
             action_start_time = schedule[command_idx].time;
 
-            if (command_idx == SCHEDULE_LENGTH - 1) {
+            if (command_idx == SCHEDULE_LENGTH) {
                 lcd.setDataAddr(LCD_Line1Start);
                 lcd.clear();    
                 lcd.setDataAddr(LCD_Line2Start);
